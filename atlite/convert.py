@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 """
-All functions for converting weather data into energy system model data.
+All functions for converting weather data into energy data.
 """
 
 from __future__ import annotations
@@ -56,21 +56,187 @@ def convert_and_aggregate(
     layout=None,
     shapes=None,
     shapes_crs=4326,
-    per_unit=False,
-    return_capacity=False,
+    mean_over_time=False,
+    sum_over_time=False,
     capacity_factor=False,
-    capacity_factor_timeseries=False,
+    return_capacity=False,
+    capacity_units="MW",
     show_progress=False,
     dask_kwargs={},
     **convert_kwds,
 ):
     """
-    Convert and aggregate a weather-based renewable generation time-series.
+    Convert and aggregate weather data to energy data.
 
     NOTE: Not meant to be used by the user him or herself. Rather it is a
     gateway function that is called by all the individual time-series
     generation functions like pv and wind. Thus, all its parameters are also
     available from these.
+
+    Parameters
+    ----------
+    convert_func : Function
+        Function that converts weather data to energy data.
+    matrix : N x S - xr.DataArray or sp.sparse.csr_matrix or None
+        If given, it is used to aggregate the grid cells to buses.
+        N is the number of buses, S the number of spatial coordinates, in the
+        order of `cutout.grid`.
+    index : pd.Index
+        Index of Buses.
+    layout : X x Y - xr.DataArray
+        The capacity to be build in each of the `grid_cells`.
+    shapes : list or pd.Series of shapely.geometry.Polygon
+        If given, matrix is constructed as indicatormatrix of the polygons, its
+        index determines the bus index on the time-series.
+    shapes_crs : pyproj.CRS or compatible
+        If different to the map crs of the cutout, the shapes are
+        transformed to match cutout.crs (defaults to EPSG:4326).
+    mean_over_time : boolean
+        If True, the result is averaged over time.
+    sum_over_time : boolean
+        If True, the result is summed over time.
+    capacity_factor : boolean
+        If True, the result is normalized to installed capacity at each bus.
+    return_capacity : boolean
+        Additionally returns the installed capacity at each bus corresponding
+        to `layout` (defaults to False).
+    capacity_units : str, default "MW"
+        Units of installed capacity at each bus (only if `capacity_factor`
+        or `return_capacity` is True).
+    show_progress : boolean, default False
+        Whether to show a progress bar.
+    dask_kwargs : dict, default {}
+        Dict with keyword arguments passed to `dask.compute`.
+
+    Returns
+    -------
+    resource : xr.DataArray
+        Time-series of the selected resource. It can be either time-series
+        per grid cell, aggregated time-series per bus, or 
+        time-averaged/cumulated time-series per bus.
+    units : xr.DataArray (optional)
+        The installed units per bus corresponding to `layout`
+        (only if `return_capacity` is True).
+
+    """
+    # Check whether any of matrix, shapes or layout is given. If not, no
+    # aggregateion is to be done.
+    aggregate = any(v is not None for v in [layout, shapes, matrix])
+
+    # Define the cases for which aggregation is possible.
+    cases_with_aggregation = [
+        convert_temperature,
+        convert_wind,
+        convert_pv,
+        convert_csp,
+        convert_solar_thermal,
+        convert_runoff,
+        convert_heat_demand,
+        convert_cooling_demand,
+    ]
+
+    # Define the cases for which the installed capacity can be used.
+    cases_with_capacity = [
+        convert_wind,
+        convert_pv,
+        convert_csp,
+    ]
+
+    # Check that inputs are valid.
+    if aggregate and convert_func not in cases_with_aggregation:
+        raise ValueError(
+            "`matrix`, `shapes` or `layout` can only be used with "
+            "`temperature`, `wind`, `pv`, `csp`, `solar_thermal`, "
+            "`runoff`, `heat_demand` or `cooling_demand`."
+        )
+    if (capacity_factor or return_capacity):
+        if convert_func not in cases_with_capacity:
+            raise ValueError(
+                "`capacity_factor` or `return_capacity` can only be used with "
+                "`wind`, `pv`, or `csp`."
+            )
+        if not aggregate:
+            raise ValueError(
+                "`capacity_factor` or `return_capacity` requires at least one "
+                "of `matrix`, `shapes` or `layout` to be passed."
+            )
+    if matrix is not None and shapes is not None:
+        raise ValueError(
+            "Passing matrix and shapes is ambiguous. Pass only one of them."
+        )
+    
+    # Get the name of the conversion function.
+    func_name = convert_func.__name__.replace("convert_", "")
+
+    # Log the conversion function being used.
+    logger.info(f"Convert and aggregate '{func_name}'.")
+
+    # Convert the weather data to energy data using the provided function.
+    da = convert_func(cutout.data, **convert_kwds)
+
+    if aggregate:
+        # Get the matrix and index for aggregation.
+        matrix, index = get_matrix_and_index(
+            cutout,
+            matrix=matrix,
+            index=index,
+            layout=layout,
+            shapes=shapes,
+            shapes_crs=shapes_crs,
+        )
+
+        # Aggregate the converted data.
+        results = aggregate_matrix(da, matrix=matrix, index=index)
+
+        if capacity_factor or return_capacity:
+            # Calculate installed capacity at each bus.
+            caps = matrix.sum(-1)
+
+            # Create a DataArray for installed capacity.
+            capacity = xr.DataArray(np.asarray(caps).flatten(), [index])
+            capacity.attrs["units"] = capacity_units
+        
+            if capacity_factor:
+                # Divide the time-series by installed capacity.
+                results = (results / capacity.where(capacity != 0)).fillna(0.0)
+                results.attrs["units"] = "per unit of installed capacity"
+            else:
+                results.attrs["units"] = capacity_units
+            
+            # Apply time averaging or summation if requested.
+            if mean_over_time:
+                results = results.mean(dim="time")
+            elif sum_over_time:
+                results = results.sum(dim="time")
+            
+        if return_capacity:
+            return maybe_progressbar(results, show_progress, **dask_kwargs), capacity
+        else:
+            return maybe_progressbar(results, show_progress, **dask_kwargs)
+
+    else:
+
+        # Apply time averaging or summation if requested.
+        if mean_over_time:
+            results = da.mean(dim="time")
+        elif sum_over_time:
+            results = da.sum(dim="time")
+        else:
+            results = da
+        
+        return maybe_progressbar(results, show_progress, **dask_kwargs)
+
+
+def get_matrix_and_index(
+    cutout,
+    matrix=None,
+    index=None,
+    layout=None,
+    shapes=None,
+    shapes_crs=4326,
+):
+    """
+    Get the matrix and index for aggregation.
 
     Parameters
     ----------
@@ -88,70 +254,17 @@ def convert_and_aggregate(
     shapes_crs : pyproj.CRS or compatible
         If different to the map crs of the cutout, the shapes are
         transformed to match cutout.crs (defaults to EPSG:4326).
-    per_unit : boolean
-        Returns the time-series in per-unit units, instead of in MW (defaults
-        to False).
-    return_capacity : boolean
-        Additionally returns the installed capacity at each bus corresponding
-        to `layout` (defaults to False).
-    capacity_factor : boolean
-        If True, the static capacity factor of the chosen resource for each
-        grid cell is computed.
-    capacity_factor_timeseries : boolean
-        If True, the capacity factor time series of the chosen resource for
-        each grid cell is computed.
-    show_progress : boolean, default False
-        Whether to show a progress bar.
-    dask_kwargs : dict, default {}
-        Dict with keyword arguments passed to `dask.compute`.
-
-    Other Parameters
-    ----------------
-    convert_func : Function
-        Callback like convert_wind, convert_pv
-
-
     Returns
     -------
-    resource : xr.DataArray
-        Time-series of renewable generation aggregated to buses, if
-        `matrix` or equivalents are provided else the total sum of
-        generated energy.
-    units : xr.DataArray (optional)
-        The installed units per bus in MW corresponding to `layout`
-        (only if `return_capacity` is True).
-
+    matrix : sp.sparse.csr_matrix
+        Aggregation matrix.
+    index : pd.Index
+        Index of Buses.
     """
-    func_name = convert_func.__name__.replace("convert_", "")
-    logger.info(f"Convert and aggregate '{func_name}'.")
-    da = convert_func(cutout.data, **convert_kwds)
-
-    no_args = all(v is None for v in [layout, shapes, matrix])
-
-    if no_args:
-        if per_unit or return_capacity:
-            raise ValueError(
-                "One of `matrix`, `shapes` and `layout` must be "
-                "given for `per_unit` or `return_capacity`"
-            )
-        if capacity_factor or capacity_factor_timeseries:
-            if capacity_factor_timeseries:
-                res = da.rename("capacity factor")
-            else:
-                res = da.mean("time").rename("capacity factor")
-            res.attrs["units"] = "p.u."
-            return maybe_progressbar(res, show_progress, **dask_kwargs)
-        else:
-            res = da.sum("time", keep_attrs=True)
-            return maybe_progressbar(res, show_progress, **dask_kwargs)
-
     if matrix is not None:
-        if shapes is not None:
-            raise ValueError(
-                "Passing matrix and shapes is ambiguous. Pass only one of them."
-            )
-
         if isinstance(matrix, xr.DataArray):
+            # Check that the spatial coordinates of the matrix align with
+            # the cutout spatial coordinates.
             coords = matrix.indexes.get(matrix.dims[1]).to_frame(index=False)
             if not np.array_equal(coords[["x", "y"]], cutout.grid[["x", "y"]]):
                 raise ValueError(
@@ -168,42 +281,33 @@ def convert_and_aggregate(
         matrix = csr_matrix(matrix)
 
     if shapes is not None:
+        # If shapes are given as a GeoDataFrame or GeoSeries, extract the
+        # index.
         geoseries_like = (pd.Series, gpd.GeoDataFrame, gpd.GeoSeries)
         if isinstance(shapes, geoseries_like) and index is None:
             index = shapes.index
 
+        # Construct indicatormatrix from shapes.
         matrix = cutout.indicatormatrix(shapes, shapes_crs)
 
     if layout is not None:
+        # Check that layout is an xarray DataArray.
         assert isinstance(layout, xr.DataArray)
+
+        # Reindex and stack layout to match cutout grid.
         layout = layout.reindex_like(cutout.data).stack(spatial=["y", "x"])
 
+        # Construct the layout matrix.
         if matrix is None:
             matrix = csr_matrix(layout.expand_dims("new"))
         else:
             matrix = csr_matrix(matrix) * spdiag(layout)
-
-    # From here on, matrix is defined and ensured to be a csr matrix.
+    
+    # If there is still no index, create a default one.
     if index is None:
         index = pd.RangeIndex(matrix.shape[0])
 
-    results = aggregate_matrix(da, matrix=matrix, index=index)
-
-    if per_unit or return_capacity:
-        caps = matrix.sum(-1)
-        capacity = xr.DataArray(np.asarray(caps).flatten(), [index])
-        capacity.attrs["units"] = "MW"
-
-    if per_unit:
-        results = (results / capacity.where(capacity != 0)).fillna(0.0)
-        results.attrs["units"] = "p.u."
-    else:
-        results.attrs["units"] = "MW"
-
-    if return_capacity:
-        return maybe_progressbar(results, show_progress, **dask_kwargs), capacity
-    else:
-        return maybe_progressbar(results, show_progress, **dask_kwargs)
+    return matrix, index
 
 
 def maybe_progressbar(ds, show_progress, **kwargs):
@@ -221,55 +325,53 @@ def maybe_progressbar(ds, show_progress, **kwargs):
 # temperature
 def convert_temperature(ds):
     """
-    Return outside temperature (useful for e.g. heat pump T-dependent
-    coefficient of performance).
+    Return temperature in degree Celsius.
     """
-    # Temperature is in Kelvin
-    return ds["temperature"] - 273.15
+    # Define possible variable names for temperature.
+    variable_names = ["temperature", "soil temperature", "dewpoint temperature"]
+
+    # Check that at least one variable name is in the dataset.
+    if not any(name in ds for name in variable_names):
+        raise ValueError(
+            f"None of the temperature variables {variable_names} found in dataset."
+        )
+    
+    # Get the variable name that is in the dataset.
+    variable_name = next(name for name in variable_names if name in ds)
+
+    # Convert temperature from Kelvin to degree Celsius.
+    ds = ds[variable_name] - 273.15
+
+    # For soil temperature, there are nans where there is sea; set them to zero.
+    ds = ds.fillna(0.0)
+
+    # Set name and units attribute.
+    ds = ds.rename(variable_name)
+    ds.attrs["units"] = "degree Celsius"
+
+    return ds
 
 
 def temperature(cutout, **params):
     return cutout.convert_and_aggregate(convert_func=convert_temperature, **params)
 
 
-# soil temperature
-def convert_soil_temperature(ds):
-    """
-    Return soil temperature (useful for e.g. heat pump T-dependent coefficient
-    of performance).
-    """
-    # Temperature is in Kelvin
-
-    # There are nans where there is sea; by setting them
-    # to zero we guarantee they do not contribute when multiplied
-    # by matrix in atlite/aggregate.py
-    return (ds["soil temperature"] - 273.15).fillna(0.0)
-
-
 def soil_temperature(cutout, **params):
-    return cutout.convert_and_aggregate(convert_func=convert_soil_temperature, **params)
-
-
-# dewpoint temperature
-def convert_dewpoint_temperature(ds):
-    """
-    Return dewpoint temperature.
-    """
-    # Temperature is in Kelvin
-    return ds["dewpoint temperature"] - 273.15
+    return cutout.convert_and_aggregate(convert_func=convert_temperature, **params)
 
 
 def dewpoint_temperature(cutout, **params):
     return cutout.convert_and_aggregate(
-        convert_func=convert_dewpoint_temperature, **params
+        convert_func=convert_temperature, **params
     )
 
 
 def convert_coefficient_of_performance(ds, source, sink_T, c0, c1, c2):
     assert source in ["air", "soil"], NotImplementedError(
-        "'source' must be one of  ['air', 'soil']"
+        "'source' must be one of ['air', 'soil']"
     )
 
+    # Get the source temperature and set default coefficients if not provided.
     if source == "air":
         source_T = convert_temperature(ds)
         if c0 is None:
@@ -279,7 +381,7 @@ def convert_coefficient_of_performance(ds, source, sink_T, c0, c1, c2):
         if c2 is None:
             c2 = 0.000630
     elif source == "soil":
-        source_T = convert_soil_temperature(ds)
+        source_T = convert_temperature(ds)
         if c0 is None:
             c0 = 8.77
         if c1 is None:
@@ -287,9 +389,17 @@ def convert_coefficient_of_performance(ds, source, sink_T, c0, c1, c2):
         if c2 is None:
             c2 = 0.000734
 
+    # Calculate the temperature difference.
     delta_T = sink_T - source_T
 
-    return c0 + c1 * delta_T + c2 * delta_T**2
+    # Calculate the coefficient of performance.
+    cop = c0 + c1 * delta_T + c2 * delta_T**2
+
+    # Set name and units attribute.
+    cop = cop.rename("coefficient of performance")
+    cop.attrs["units"] = "heating or cooling delivered per unit of energy input"
+
+    return cop
 
 
 def coefficient_of_performance(
@@ -333,19 +443,25 @@ def coefficient_of_performance(
 
 # heat demand
 def convert_heat_demand(ds, threshold, a, constant, hour_shift):
-    # Temperature is in Kelvin; take daily average
-    T = ds["temperature"]
-    T = T.assign_coords(
-        time=(T.coords["time"] + np.timedelta64(dt.timedelta(hours=hour_shift)))
+    # Convert temperature to degree Celsius.
+    temperature = convert_temperature(ds)
+
+    # Apply a time shift to account for local time zones.
+    temperature = temperature.assign_coords(
+        time=(temperature.coords["time"] + np.timedelta64(dt.timedelta(hours=hour_shift)))
     )
 
-    T = T.resample(time="1D").mean(dim="time")
-    threshold += 273.15
-    heat_demand = a * (threshold - T)
+    # Take the daily average temperature.
+    temperature = temperature.resample(time="1D").mean(dim="time")
 
-    heat_demand = heat_demand.clip(min=0.0)
+    # Calculate heat demand using degree-day approximation.
+    heat_demand = constant + a * (threshold - temperature).clip(min=0.0)
 
-    return (constant + heat_demand).rename("heat_demand")
+    # Set name and units attribute.
+    heat_demand = heat_demand.rename("heating degrees")
+    heat_demand.attrs["units"] = "degree Celsius"
+
+    return heat_demand
 
 
 def heat_demand(cutout, threshold=15.0, a=1.0, constant=0.0, hour_shift=0.0, **params):
@@ -403,19 +519,25 @@ def heat_demand(cutout, threshold=15.0, a=1.0, constant=0.0, hour_shift=0.0, **p
 
 # cooling demand
 def convert_cooling_demand(ds, threshold, a, constant, hour_shift):
-    # Temperature is in Kelvin; take daily average
-    T = ds["temperature"]
-    T = T.assign_coords(
-        time=(T.coords["time"] + np.timedelta64(dt.timedelta(hours=hour_shift)))
+    # Convert temperature to degree Celsius.
+    temperature = convert_temperature(ds)
+
+    # Apply a time shift to account for local time zones.
+    temperature = temperature.assign_coords(
+        time=(temperature.coords["time"] + np.timedelta64(dt.timedelta(hours=hour_shift)))
     )
 
-    T = T.resample(time="1D").mean(dim="time")
-    threshold += 273.15
-    cooling_demand = a * (T - threshold)
+    # Take the daily average temperature.
+    temperature = temperature.resample(time="1D").mean(dim="time")
 
-    cooling_demand = cooling_demand.clip(min=0.0)
+    # Calculate cooling demand using degree-day approximation.
+    cooling_demand = constant + a * (temperature - threshold).clip(min=0.0)
 
-    return (constant + cooling_demand).rename("cooling_demand")
+    # Set name and units attribute.
+    cooling_demand = cooling_demand.rename("cooling degrees")
+    cooling_demand.attrs["units"] = "degree Celsius"
+
+    return cooling_demand
 
 
 def cooling_demand(
@@ -480,8 +602,8 @@ def cooling_demand(
 def convert_solar_thermal(
     ds, orientation, trigon_model, clearsky_model, c0, c1, t_store
 ):
-    # convert storage temperature to Kelvin in line with reanalysis data
-    t_store += 273.15
+    # Convert temperature to degree Celsius.
+    temperature = convert_temperature(ds)
 
     # Downward shortwave radiation flux is in W/m^2
     # http://rda.ucar.edu/datasets/ds094.0/#metadata/detailed.html?_do=y
@@ -491,15 +613,21 @@ def convert_solar_thermal(
         ds, solar_position, surface_orientation, trigon_model, clearsky_model
     )
 
-    # overall efficiency; can be negative, so need to remove negative values
-    # below
+    # Compute overall efficiency; can be negative, so need to remove negative
+    # values.
     eta = c0 - c1 * (
-        (t_store - ds["temperature"]) / irradiation.where(irradiation != 0)
+        (t_store - temperature) / irradiation.where(irradiation != 0)
     ).fillna(0)
 
+    # Compute output.
     output = irradiation * eta
+    output = output.where(output > 0.0, 0.0)
 
-    return output.where(output > 0.0, 0.0)
+    # Set name and units attribute.
+    output = output.rename("solar thermal generation")
+    output.attrs["units"] = "W/m^2"
+
+    return output
 
 
 def solar_thermal(
@@ -587,8 +715,10 @@ def convert_wind(
         dask="parallelized",
     )
 
-    da.attrs["units"] = "MWh/MWp"
-    da = da.rename("specific generation")
+    # Set name and units attribute.
+    da = da.rename("wind generation")
+    da.attrs["units"] = "per unit of installed capacity"
+
     return da
 
 
@@ -673,6 +803,11 @@ def convert_irradiation(
         tracking=tracking,
         irradiation=irradiation,
     )
+
+    # Set name and units attribute.
+    irradiation = irradiation.rename(f"{irradiation} irradiation")
+    irradiation.attrs["units"] = "W/m^2"
+
     return irradiation
 
 
@@ -760,6 +895,11 @@ def convert_pv(
         tracking=tracking,
     )
     solar_panel = SolarPanelModel(ds, irradiation, panel)
+
+    # Set name and units attribute.
+    solar_panel = solar_panel.rename("solar PV generation")
+    solar_panel.attrs["units"] = "per unit of installed capacity"
+
     return solar_panel
 
 
@@ -861,8 +1001,9 @@ def convert_csp(ds, installation):
     # Fill NaNs originating from DNI or solar positions outside efficiency bounds
     da = da.fillna(0.0)
 
-    da.attrs["units"] = "kWh/kW_ref"
-    da = da.rename("specific generation")
+    # Set name and units attribute.
+    da = da.rename("csp generation")
+    da.attrs["units"] = "per unit of installed capacity"
 
     return da
 
@@ -1046,7 +1187,7 @@ def hydro(
 
 
 def convert_line_rating(
-    ds, psi, R, D=0.028, Ts=373, epsilon=0.6, alpha=0.6, per_unit=False
+    ds, psi, R, D=0.028, Ts=373, epsilon=0.6, alpha=0.6
 ):
     """
     Convert the cutout data to dynamic line rating time series.
@@ -1145,7 +1286,13 @@ def convert_line_rating(
     qs = alpha * Q * A * sin(Phi_s)
 
     Imax = sqrt((qc + qr - qs) / R)
-    return Imax.min("spatial") if isinstance(Imax, xr.DataArray) else Imax
+    Imax = Imax.min("spatial") if isinstance(Imax, xr.DataArray) else Imax
+
+    # Set name and units attribute.
+    Imax = Imax.rename("maximum line current")
+    Imax.attrs["units"] = "A"
+
+    return Imax
 
 
 def line_rating(
