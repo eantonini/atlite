@@ -145,13 +145,13 @@ def pv_tracking_test(cutout):
     cap_factor = cutout.pv(
         atlite.resource.solarpanels.CSi,
         orientation,
-        capacity_factor=True,
+        mean_over_time=True,
     )
     cap_factor_tracking_0axis = cutout.pv(
         atlite.resource.solarpanels.CSi,
         orientation,
         tracking=None,
-        capacity_factor=True,
+        mean_over_time=True,
     )
 
     assert cap_factor_tracking_0axis.notnull().all()
@@ -163,28 +163,28 @@ def pv_tracking_test(cutout):
         atlite.resource.solarpanels.CSi,
         orientation,
         tracking="horizontal",
-        capacity_factor=True,
+        mean_over_time=True,
     )
 
     cap_factor_tracking_1axis_th = cutout.pv(
         atlite.resource.solarpanels.CSi,
         orientation,
         tracking="tilted_horizontal",
-        capacity_factor=True,
+        mean_over_time=True,
     )
 
     cap_factor_tracking_1axis_v = cutout.pv(
         atlite.resource.solarpanels.CSi,
         orientation,
         tracking="vertical",
-        capacity_factor=True,
+        mean_over_time=True,
     )
 
     cap_factor_tracking_2axis = cutout.pv(
         atlite.resource.solarpanels.CSi,
         orientation,
         tracking="dual",
-        capacity_factor=True,
+        mean_over_time=True,
     )
 
     assert cap_factor_tracking_1axis_v.notnull().all()
@@ -212,7 +212,7 @@ def csp_test(cutout):
     and technologies.
     """
     ## Test technology = "solar tower"
-    st = cutout.csp(atlite.cspinstallations.SAM_solar_tower, capacity_factor=True)
+    st = cutout.csp(atlite.cspinstallations.SAM_solar_tower, mean_over_time=True)
 
     assert st.notnull().all()
     assert (st >= 0).all()
@@ -224,7 +224,7 @@ def csp_test(cutout):
     assert (st <= ll).all()
 
     ## Test technology = "parabolic trough"
-    pt = cutout.csp(atlite.cspinstallations.SAM_parabolic_trough, capacity_factor=True)
+    pt = cutout.csp(atlite.cspinstallations.SAM_parabolic_trough, mean_over_time=True)
 
     assert pt.notnull().all()
     assert (pt >= 0).all()
