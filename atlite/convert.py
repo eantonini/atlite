@@ -112,7 +112,7 @@ def convert_and_aggregate(
     -------
     resource : xr.DataArray
         Time-series of the selected resource. It can be either time-series
-        per grid cell, aggregated time-series per bus, or 
+        per grid cell, aggregated time-series per bus, or
         time-averaged/cumulated time-series per bus.
     units : xr.DataArray (optional)
         The installed units per bus corresponding to `layout`
@@ -149,7 +149,7 @@ def convert_and_aggregate(
             "`temperature`, `wind`, `pv`, `csp`, `solar_thermal`, "
             "`runoff`, `heat_demand` or `cooling_demand`."
         )
-    if (capacity_factor or return_capacity):
+    if capacity_factor or return_capacity:
         if convert_func not in cases_with_capacity:
             raise ValueError(
                 "`capacity_factor` or `return_capacity` can only be used with "
@@ -164,7 +164,7 @@ def convert_and_aggregate(
         raise ValueError(
             "Passing matrix and shapes is ambiguous. Pass only one of them."
         )
-    
+
     # Get the name of the conversion function.
     func_name = convert_func.__name__.replace("convert_", "")
 
@@ -195,27 +195,26 @@ def convert_and_aggregate(
             # Create a DataArray for installed capacity.
             capacity = xr.DataArray(np.asarray(caps).flatten(), [index])
             capacity.attrs["units"] = capacity_units
-        
+
             if capacity_factor:
                 # Divide the time-series by installed capacity.
                 results = (results / capacity.where(capacity != 0)).fillna(0.0)
                 results.attrs["units"] = "per unit of installed capacity"
             else:
                 results.attrs["units"] = capacity_units
-            
+
             # Apply time averaging or summation if requested.
             if mean_over_time:
                 results = results.mean(dim="time")
             elif sum_over_time:
                 results = results.sum(dim="time")
-            
+
         if return_capacity:
             return maybe_progressbar(results, show_progress, **dask_kwargs), capacity
         else:
             return maybe_progressbar(results, show_progress, **dask_kwargs)
 
     else:
-
         # Apply time averaging or summation if requested.
         if mean_over_time:
             results = da.mean(dim="time")
@@ -223,7 +222,7 @@ def convert_and_aggregate(
             results = da.sum(dim="time")
         else:
             results = da
-        
+
         return maybe_progressbar(results, show_progress, **dask_kwargs)
 
 
@@ -254,6 +253,7 @@ def get_matrix_and_index(
     shapes_crs : pyproj.CRS or compatible
         If different to the map crs of the cutout, the shapes are
         transformed to match cutout.crs (defaults to EPSG:4326).
+
     Returns
     -------
     matrix : sp.sparse.csr_matrix
@@ -302,7 +302,7 @@ def get_matrix_and_index(
             matrix = csr_matrix(layout.expand_dims("new"))
         else:
             matrix = csr_matrix(matrix) * spdiag(layout)
-    
+
     # If there is still no index, create a default one.
     if index is None:
         index = pd.RangeIndex(matrix.shape[0])
@@ -335,7 +335,7 @@ def convert_temperature(ds):
         raise ValueError(
             f"None of the temperature variables {variable_names} found in dataset."
         )
-    
+
     # Get the variable name that is in the dataset.
     variable_name = next(name for name in variable_names if name in ds)
 
@@ -361,9 +361,7 @@ def soil_temperature(cutout, **params):
 
 
 def dewpoint_temperature(cutout, **params):
-    return cutout.convert_and_aggregate(
-        convert_func=convert_temperature, **params
-    )
+    return cutout.convert_and_aggregate(convert_func=convert_temperature, **params)
 
 
 def convert_coefficient_of_performance(ds, source, sink_T, c0, c1, c2):
@@ -448,7 +446,9 @@ def convert_heat_demand(ds, threshold, a, constant, hour_shift):
 
     # Apply a time shift to account for local time zones.
     temperature = temperature.assign_coords(
-        time=(temperature.coords["time"] + np.timedelta64(dt.timedelta(hours=hour_shift)))
+        time=(
+            temperature.coords["time"] + np.timedelta64(dt.timedelta(hours=hour_shift))
+        )
     )
 
     # Take the daily average temperature.
@@ -524,7 +524,9 @@ def convert_cooling_demand(ds, threshold, a, constant, hour_shift):
 
     # Apply a time shift to account for local time zones.
     temperature = temperature.assign_coords(
-        time=(temperature.coords["time"] + np.timedelta64(dt.timedelta(hours=hour_shift)))
+        time=(
+            temperature.coords["time"] + np.timedelta64(dt.timedelta(hours=hour_shift))
+        )
     )
 
     # Take the daily average temperature.
@@ -1186,9 +1188,7 @@ def hydro(
     )
 
 
-def convert_line_rating(
-    ds, psi, R, D=0.028, Ts=373, epsilon=0.6, alpha=0.6
-):
+def convert_line_rating(ds, psi, R, D=0.028, Ts=373, epsilon=0.6, alpha=0.6):
     """
     Convert the cutout data to dynamic line rating time series.
 
