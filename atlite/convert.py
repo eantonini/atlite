@@ -114,8 +114,8 @@ def convert_and_aggregate(
         Time-series of the selected resource. It can be either time-series
         per grid cell, aggregated time-series per bus, or
         time-averaged/cumulated time-series per bus.
-    units : xr.DataArray (optional)
-        The installed units per bus corresponding to `layout`
+    capacity : xr.DataArray (optional)
+        The installed capacity per bus corresponding to `layout`
         (only if `return_capacity` is True).
 
     """
