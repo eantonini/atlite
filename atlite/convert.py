@@ -1853,7 +1853,7 @@ def convert_line_rating(
     qs = alpha * Q * A * sin(Phi_s)
 
     Imax = sqrt((qc + qr - qs) / R)
-    
+
     # Handle both xr.DataArray and scalar float cases.
     if isinstance(Imax, xr.DataArray):
         Imax = Imax.min("spatial")

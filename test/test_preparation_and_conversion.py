@@ -66,7 +66,9 @@ def pv_test(cutout, time=TIME, skip_optimal_sum_test=False):
     Compare optimal orientation with flat orientation.
     """
     orientation = {"slope": 0.0, "azimuth": 0.0}
-    cap_factor = cutout.pv(atlite.resource.solarpanels.CdTe, orientation)
+    cap_factor = cutout.pv(
+        atlite.resource.solarpanels.CdTe, orientation, mean_over_time=True
+    )
 
     assert cap_factor.notnull().all()
     assert cap_factor.sum() > 0
@@ -97,7 +99,9 @@ def pv_test(cutout, time=TIME, skip_optimal_sum_test=False):
     assert all(cap_per_region.round(3) == capacity.round(3))
 
     # Now compare with optimal orienation
-    cap_factor_opt = cutout.pv(atlite.resource.solarpanels.CdTe, "latitude_optimal")
+    cap_factor_opt = cutout.pv(
+        atlite.resource.solarpanels.CdTe, "latitude_optimal", mean_over_time=True
+    )
 
     if not skip_optimal_sum_test:
         assert cap_factor_opt.sum() > cap_factor.sum()
@@ -281,7 +285,9 @@ def wind_test(cutout):
     lower production than a layout proportionally to the capacity layout
     squared.
     """
-    cap_factor = cutout.wind(atlite.windturbines.Enercon_E101_3000kW)
+    cap_factor = cutout.wind(
+        atlite.windturbines.Enercon_E101_3000kW, mean_over_time=True
+    )
 
     assert cap_factor.notnull().all()
     assert cap_factor.sum() > 0
@@ -325,7 +331,7 @@ def runoff_test(cutout):
     lower sites (mostly at sea level) should have a smaller capacity
     factor total and production.
     """
-    cap_factor = cutout.runoff()
+    cap_factor = cutout.runoff(mean_over_time=True)
     assert cap_factor.notnull().all()
     assert cap_factor.sum() > 0
 
