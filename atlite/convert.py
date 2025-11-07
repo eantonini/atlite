@@ -399,7 +399,7 @@ def convert_temperature(ds: xr.Dataset) -> xr.DataArray:
 
 def temperature(
     cutout: Cutout, **params: Any
-) -> xr.DataArray | tuple[xr.DataArray, xr.DataArray]:
+) -> xr.DataArray:
     """
     Generate temperature time-series from weather data.
 
@@ -416,16 +416,15 @@ def temperature(
 
     Returns
     -------
-    xr.DataArray | tuple[xr.DataArray, xr.DataArray]
-        Temperature time-series in degree Celsius. If `return_capacity` is True,
-        returns a tuple of (temperature_data, capacity_data).
+    xr.DataArray
+        Temperature time-series in degree Celsius.
     """
     return cutout.convert_and_aggregate(convert_func=convert_temperature, **params)
 
 
 def soil_temperature(
     cutout: Cutout, **params: Any
-) -> xr.DataArray | tuple[xr.DataArray, xr.DataArray]:
+) -> xr.DataArray:
     """
     Generate soil temperature time-series from weather data.
 
@@ -442,16 +441,15 @@ def soil_temperature(
 
     Returns
     -------
-    xr.DataArray | tuple[xr.DataArray, xr.DataArray]
-        Soil temperature time-series in degree Celsius. If `return_capacity` is True,
-        returns a tuple of (temperature_data, capacity_data).
+    xr.DataArray
+        Soil temperature time-series in degree Celsius.
     """
     return cutout.convert_and_aggregate(convert_func=convert_temperature, **params)
 
 
 def dewpoint_temperature(
     cutout: Cutout, **params: Any
-) -> xr.DataArray | tuple[xr.DataArray, xr.DataArray]:
+) -> xr.DataArray:
     """
     Generate dewpoint temperature time-series from weather data.
 
@@ -467,9 +465,8 @@ def dewpoint_temperature(
 
     Returns
     -------
-    xr.DataArray | tuple[xr.DataArray, xr.DataArray]
-        Dewpoint temperature time-series in degree Celsius. If `return_capacity` is True,
-        returns a tuple of (temperature_data, capacity_data).
+    xr.DataArray
+        Dewpoint temperature time-series in degree Celsius.
     """
     return cutout.convert_and_aggregate(convert_func=convert_temperature, **params)
 
@@ -564,7 +561,7 @@ def coefficient_of_performance(
     c1: float | None = None,
     c2: float | None = None,
     **params: Any,
-) -> xr.DataArray | tuple[xr.DataArray, xr.DataArray]:
+) -> xr.DataArray:
     """
     Convert ambient or soil temperature to coefficient of performance (COP) of
     air- or ground-sourced heat pumps. The COP is a function of temperature
@@ -590,8 +587,8 @@ def coefficient_of_performance(
 
     Returns
     -------
-    xr.DataArray | tuple[xr.DataArray, xr.DataArray]
-        Coefficient of performance time series and optionally capacity.
+    xr.DataArray
+        Coefficient of performance time series.
 
     References
     ----------
@@ -675,7 +672,7 @@ def heat_demand(
     constant: float = 0.0,
     hour_shift: float = 0.0,
     **params: Any,
-) -> xr.DataArray | tuple[xr.DataArray, xr.DataArray]:
+) -> xr.DataArray:
     """
     Generate daily heat demand time-series using the degree-day approximation.
 
@@ -705,9 +702,8 @@ def heat_demand(
 
     Returns
     -------
-    xr.DataArray | tuple[xr.DataArray, xr.DataArray]
-        Daily heat demand time-series in heating degree-days. If `return_capacity`
-        is True, returns a tuple of (heat_demand_data, capacity_data).
+    xr.DataArray
+        Daily heat demand time-series in heating degree-days.
 
     Notes
     -----
@@ -797,7 +793,7 @@ def cooling_demand(
     constant: float = 0.0,
     hour_shift: float = 0.0,
     **params: Any,
-) -> xr.DataArray | tuple[xr.DataArray, xr.DataArray]:
+) -> xr.DataArray:
     """
     Convert outside temperature into daily cooling demand using degree-day approximation.
 
@@ -827,9 +823,8 @@ def cooling_demand(
 
     Returns
     -------
-    xr.DataArray | tuple[xr.DataArray, xr.DataArray]
-        Daily cooling demand time-series in cooling degree-days. If `return_capacity`
-        is True, returns a tuple of (cooling_demand_data, capacity_data).
+    xr.DataArray
+        Daily cooling demand time-series in cooling degree-days.
 
     Notes
     -----
@@ -939,7 +934,7 @@ def solar_thermal(
     c1: float = 3.0,
     t_store: float = 80.0,
     **params: Any,
-) -> xr.DataArray | tuple[xr.DataArray, xr.DataArray]:
+) -> xr.DataArray:
     """
     Convert downward short-wave radiation flux and outside temperature into
     time series for solar thermal collectors.
@@ -1190,7 +1185,7 @@ def irradiation(
     tracking: str | None = None,
     clearsky_model: str | None = None,
     **params: Any,
-) -> xr.DataArray | tuple[xr.DataArray, xr.DataArray]:
+) -> xr.DataArray:
     """
     Calculate the total, direct, diffuse, or ground irradiation on a tilted
     surface.
@@ -1230,9 +1225,8 @@ def irradiation(
 
     Returns
     -------
-    xr.DataArray | tuple[xr.DataArray, xr.DataArray]
-        The desired irradiation quantity on the tilted surface. If
-        `return_capacity` is True, returns a tuple of (irradiation_data, capacity_data).
+    xr.DataArray
+        The desired irradiation quantity on the tilted surface.
 
     Notes
     -----
@@ -1572,7 +1566,7 @@ def runoff(
     lower_threshold_quantile: float | bool | None = None,
     normalize_using_yearly: pd.Series | None = None,
     **params: Any,
-) -> xr.DataArray | tuple[xr.DataArray, xr.DataArray]:
+) -> xr.DataArray:
     """
     Convert runoff data with optional smoothing and normalization.
 
@@ -1599,9 +1593,8 @@ def runoff(
 
     Returns
     -------
-    xr.DataArray or tuple[xr.DataArray, xr.DataArray]
-        Processed runoff time series. Returns tuple if `return_capacity`
-        is specified in params.
+    xr.DataArray
+        Processed runoff time series.
 
     Notes
     -----
