@@ -163,11 +163,11 @@ def convert_and_aggregate(
                 "`capacity_factor` or `return_capacity` can only be used with "
                 "`wind`, `pv`, or `csp`."
             )
+        # If capacity_factor or return_capacity is requested without aggregation,
+        # automatically create a uniform layout for per-grid-cell capacity factors.
         if not aggregate:
-            raise ValueError(
-                "`capacity_factor` or `return_capacity` requires at least one "
-                "of `matrix`, `shapes` or `layout` to be passed."
-            )
+            layout = cutout.uniform_layout()
+            aggregate = True
     if matrix is not None and shapes is not None:
         raise ValueError(
             "Passing matrix and shapes is ambiguous. Pass only one of them."
@@ -217,11 +217,6 @@ def convert_and_aggregate(
             elif sum_over_time:
                 results = results.sum(dim="time")
 
-        if return_capacity:
-            return maybe_progressbar(results, show_progress, **dask_kwargs), capacity
-        else:
-            return maybe_progressbar(results, show_progress, **dask_kwargs)
-
     else:
         # Apply time averaging or summation if requested.
         if mean_over_time:
@@ -231,6 +226,9 @@ def convert_and_aggregate(
         else:
             results = da
 
+    if return_capacity:
+        return maybe_progressbar(results, show_progress, **dask_kwargs), capacity
+    else:
         return maybe_progressbar(results, show_progress, **dask_kwargs)
 
 
