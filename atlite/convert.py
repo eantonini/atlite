@@ -397,9 +397,7 @@ def convert_temperature(ds: xr.Dataset) -> xr.DataArray:
     return ds
 
 
-def temperature(
-    cutout: Cutout, **params: Any
-) -> xr.DataArray:
+def temperature(cutout: Cutout, **params: Any) -> xr.DataArray:
     """
     Generate temperature time-series from weather data.
 
@@ -422,9 +420,7 @@ def temperature(
     return cutout.convert_and_aggregate(convert_func=convert_temperature, **params)
 
 
-def soil_temperature(
-    cutout: Cutout, **params: Any
-) -> xr.DataArray:
+def soil_temperature(cutout: Cutout, **params: Any) -> xr.DataArray:
     """
     Generate soil temperature time-series from weather data.
 
@@ -447,9 +443,7 @@ def soil_temperature(
     return cutout.convert_and_aggregate(convert_func=convert_temperature, **params)
 
 
-def dewpoint_temperature(
-    cutout: Cutout, **params: Any
-) -> xr.DataArray:
+def dewpoint_temperature(cutout: Cutout, **params: Any) -> xr.DataArray:
     """
     Generate dewpoint temperature time-series from weather data.
 
