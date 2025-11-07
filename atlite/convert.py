@@ -1736,14 +1736,14 @@ def hydro(
 
 
 def convert_line_rating(
-    ds: xr.Dataset,
+    ds: xr.Dataset | dict,
     psi: float,
     R: float,
     D: float = 0.028,
     Ts: float = 373,
     epsilon: float = 0.6,
     alpha: float = 0.6,
-) -> xr.DataArray:
+) -> xr.DataArray | float:
     """
     Convert weather data to dynamic line rating time series.
 
@@ -1753,10 +1753,11 @@ def convert_line_rating(
 
     Parameters
     ----------
-    ds : xr.Dataset
+    ds : xr.Dataset | dict
         Weather dataset containing temperature, wind speed, wind direction,
         solar radiation, and elevation data for grid cells overlapping
-        with the transmission line.
+        with the transmission line. Can also be a dict with scalar values
+        for single-point calculations.
     psi : float
         Azimuth angle of the transmission line in degrees, measured as
         the angle from north (0° = north, 90° = east, 180° = south, 270° = west).
@@ -1774,9 +1775,10 @@ def convert_line_rating(
 
     Returns
     -------
-    xr.DataArray
-        Maximum allowable current capacity per timestep in Amperes, with
-        time and spatial dimensions preserved from input dataset.
+    xr.DataArray | float
+        Maximum allowable current capacity per timestep in Amperes. Returns
+        an xr.DataArray with time and spatial dimensions when input is an
+        xr.Dataset, or a float when input is a dict with scalar values.
 
     Notes
     -----
@@ -1851,11 +1853,13 @@ def convert_line_rating(
     qs = alpha * Q * A * sin(Phi_s)
 
     Imax = sqrt((qc + qr - qs) / R)
-    Imax = Imax.min("spatial") if isinstance(Imax, xr.DataArray) else Imax
-
-    # Set name and units attribute.
-    Imax = Imax.rename("maximum line current")
-    Imax.attrs["units"] = "A"
+    
+    # Handle both xr.DataArray and scalar float cases.
+    if isinstance(Imax, xr.DataArray):
+        Imax = Imax.min("spatial")
+        # Set name and units attribute.
+        Imax = Imax.rename("maximum line current")
+        Imax.attrs["units"] = "A"
 
     return Imax
 
