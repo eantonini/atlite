@@ -70,55 +70,57 @@ def convert_and_aggregate(
     """
     Convert and aggregate weather data to energy data.
 
-    NOTE: Not meant to be used by the user him or herself. Rather it is a
-    gateway function that is called by all the individual time-series
-    generation functions like pv and wind. Thus, all its parameters are also
-    available from these.
+    This is a gateway function called by all individual time-series
+    generation functions (e.g., pv, wind). It is not intended for direct
+    user interaction. All parameters are also available in the specific
+    generation functions.
 
     Parameters
     ----------
-    convert_func : Function
+    cutout : Cutout
+        The weather data cutout containing the input data.
+    convert_func : Callable[..., xr.DataArray]
         Function that converts weather data to energy data.
-    matrix : N x S - xr.DataArray or sp.sparse.csr_matrix or None
-        If given, it is used to aggregate the grid cells to buses.
-        N is the number of buses, S the number of spatial coordinates, in the
-        order of `cutout.grid`.
-    index : pd.Index
-        Index of Buses.
-    layout : X x Y - xr.DataArray
-        The capacity to be build in each of the `grid_cells`.
-    shapes : list or pd.Series of shapely.geometry.Polygon
-        If given, matrix is constructed as indicatormatrix of the polygons, its
-        index determines the bus index on the time-series.
-    shapes_crs : pyproj.CRS or compatible
-        If different to the map crs of the cutout, the shapes are
-        transformed to match cutout.crs (defaults to EPSG:4326).
-    mean_over_time : boolean
-        If True, the result is averaged over time.
-    sum_over_time : boolean
+    matrix : xr.DataArray | csr_matrix | None, optional
+        Aggregation matrix (N x S) where N is the number of buses and S is 
+        the number of spatial coordinates in the order of `cutout.grid`. 
+        Used to aggregate grid cells to buses.
+    index : pd.Index | None, optional
+        Index of buses for the aggregated output.
+    layout : xr.DataArray | None, optional
+        Capacity layout (X x Y) specifying the capacity to be built in each
+        grid cell.
+    shapes : list | pd.Series | gpd.GeoSeries | gpd.GeoDataFrame | None, optional
+        Geometric shapes (e.g., polygons) used to construct an indicator matrix.
+        The shapes' index determines the bus index in the time-series.
+    shapes_crs : int | str | Any, default 4326
+        Coordinate reference system for shapes. If different from the cutout's
+        CRS, shapes are transformed to match (defaults to EPSG:4326).
+    mean_over_time : bool, default False
+        If True, the result is time-averaged.
+    sum_over_time : bool, default False
         If True, the result is summed over time.
-    capacity_factor : boolean
-        If True, the result is normalized to installed capacity at each bus.
-    return_capacity : boolean
-        Additionally returns the installed capacity at each bus corresponding
-        to `layout` (defaults to False).
+    capacity_factor : bool, default False
+        If True, normalizes the result by installed capacity at each bus.
+    return_capacity : bool, default False
+        If True, additionally returns the installed capacity at each bus
+        corresponding to the layout.
     capacity_units : str, default "MW"
-        Units of installed capacity at each bus (only if `capacity_factor`
+        Units for installed capacity (only relevant when `capacity_factor`
         or `return_capacity` is True).
-    show_progress : boolean, default False
-        Whether to show a progress bar.
-    dask_kwargs : dict, default {}
-        Dict with keyword arguments passed to `dask.compute`.
+    show_progress : bool, default False
+        Whether to display a progress bar during computation.
+    dask_kwargs : dict[str, Any] | None, optional
+        Additional keyword arguments passed to `dask.compute()`.
+    **convert_kwds : Any
+        Additional keyword arguments passed to the conversion function.
 
     Returns
     -------
-    resource : xr.DataArray
-        Time-series of the selected resource. It can be either time-series
-        per grid cell, aggregated time-series per bus, or
-        time-averaged/cumulated time-series per bus.
-    capacity : xr.DataArray (optional)
-        The installed capacity per bus corresponding to `layout`
-        (only if `return_capacity` is True).
+    xr.DataArray | tuple[xr.DataArray, xr.DataArray]
+        If `return_capacity` is False: Single DataArray with time-series of the
+        selected resource (per grid cell, aggregated per bus, or time-averaged).
+        If `return_capacity` is True: Tuple of (resource_data, capacity_data).
 
     """
     # Handle mutable default arguments
@@ -241,31 +243,33 @@ def get_matrix_and_index(
     shapes_crs: int | str | Any = 4326,
 ) -> tuple[csr_matrix, pd.Index]:
     """
-    Get the matrix and index for aggregation.
+    Construct the aggregation matrix and index for spatial aggregation.
 
     Parameters
     ----------
-    matrix : N x S - xr.DataArray or sp.sparse.csr_matrix or None
-        If given, it is used to aggregate the grid cells to buses.
-        N is the number of buses, S the number of spatial coordinates, in the
-        order of `cutout.grid`.
-    index : pd.Index
-        Index of Buses.
-    layout : X x Y - xr.DataArray
-        The capacity to be build in each of the `grid_cells`.
-    shapes : list or pd.Series of shapely.geometry.Polygon
-        If given, matrix is constructed as indicatormatrix of the polygons, its
-        index determines the bus index on the time-series.
-    shapes_crs : pyproj.CRS or compatible
-        If different to the map crs of the cutout, the shapes are
-        transformed to match cutout.crs (defaults to EPSG:4326).
+    cutout : Cutout
+        The weather data cutout containing spatial grid information.
+    matrix : xr.DataArray | csr_matrix | None, optional
+        Pre-defined aggregation matrix (N x S) where N is the number of buses
+        and S is the number of spatial coordinates in `cutout.grid` order.
+    index : pd.Index | None, optional
+        Index labels for the buses in the aggregated output.
+    layout : xr.DataArray | None, optional
+        Capacity layout (X x Y) specifying the capacity to be built in each
+        grid cell.
+    shapes : list | pd.Series | gpd.GeoSeries | gpd.GeoDataFrame | None, optional
+        Geometric shapes used to construct an indicator matrix. The shapes'
+        index determines the bus labels in the time-series.
+    shapes_crs : int | str | Any, default 4326
+        Coordinate reference system for shapes. If different from the cutout's
+        CRS, shapes are transformed to match (defaults to EPSG:4326).
 
     Returns
     -------
-    matrix : sp.sparse.csr_matrix
-        Aggregation matrix.
-    index : pd.Index
-        Index of Buses.
+    tuple[csr_matrix, pd.Index]
+        A tuple containing:
+        - Sparse aggregation matrix for spatial aggregation
+        - Index labels for the aggregated buses
     """
     if matrix is not None:
         if isinstance(matrix, xr.DataArray):
@@ -347,17 +351,27 @@ def maybe_progressbar(
 # temperature
 def convert_temperature(ds: xr.Dataset) -> xr.DataArray:
     """
-    Return temperature in degree Celsius.
+    Convert temperature data from Kelvin to degree Celsius.
+    
+    Supports multiple temperature variable names including 'temperature',
+    'soil temperature', and 'dewpoint temperature'. For soil temperature,
+    NaN values over sea areas are set to zero.
 
     Parameters
     ----------
     ds : xr.Dataset
-        Dataset containing temperature data.
+        Dataset containing temperature data in Kelvin.
 
     Returns
     -------
     xr.DataArray
-        Temperature in degree Celsius.
+        Temperature data converted to degree Celsius with appropriate
+        variable name and units attributes.
+        
+    Raises
+    ------
+    ValueError
+        If none of the expected temperature variables are found in the dataset.
     """
     # Define possible variable names for temperature.
     variable_names = ["temperature", "soil temperature", "dewpoint temperature"]
@@ -388,19 +402,24 @@ def temperature(
     cutout: Cutout, **params: Any
 ) -> xr.DataArray | tuple[xr.DataArray, xr.DataArray]:
     """
-    Convert and aggregate temperature data.
+    Generate temperature time-series from weather data.
+    
+    Converts temperature data from Kelvin to Celsius and optionally
+    aggregates spatially and/or temporally based on the provided parameters.
 
     Parameters
     ----------
     cutout : Cutout
-        The weather data cutout.
+        The weather data cutout containing temperature data.
     **params : Any
-        Additional parameters for convert_and_aggregate.
+        Additional parameters for spatial/temporal aggregation. See
+        `convert_and_aggregate` for available options.
 
     Returns
     -------
     xr.DataArray | tuple[xr.DataArray, xr.DataArray]
-        Temperature time series and optionally capacity.
+        Temperature time-series in degree Celsius. If `return_capacity` is True,
+        returns a tuple of (temperature_data, capacity_data).
     """
     return cutout.convert_and_aggregate(convert_func=convert_temperature, **params)
 
@@ -409,19 +428,24 @@ def soil_temperature(
     cutout: Cutout, **params: Any
 ) -> xr.DataArray | tuple[xr.DataArray, xr.DataArray]:
     """
-    Convert and aggregate soil temperature data.
+    Generate soil temperature time-series from weather data.
+    
+    Converts soil temperature data from Kelvin to Celsius. NaN values
+    over sea areas are automatically set to zero.
 
     Parameters
     ----------
     cutout : Cutout
-        The weather data cutout.
+        The weather data cutout containing soil temperature data.
     **params : Any
-        Additional parameters for convert_and_aggregate.
+        Additional parameters for spatial/temporal aggregation. See
+        `convert_and_aggregate` for available options.
 
     Returns
     -------
     xr.DataArray | tuple[xr.DataArray, xr.DataArray]
-        Soil temperature time series and optionally capacity.
+        Soil temperature time-series in degree Celsius. If `return_capacity` is True,
+        returns a tuple of (temperature_data, capacity_data).
     """
     return cutout.convert_and_aggregate(convert_func=convert_temperature, **params)
 
@@ -430,19 +454,23 @@ def dewpoint_temperature(
     cutout: Cutout, **params: Any
 ) -> xr.DataArray | tuple[xr.DataArray, xr.DataArray]:
     """
-    Convert and aggregate dewpoint temperature data.
+    Generate dewpoint temperature time-series from weather data.
+    
+    Converts dewpoint temperature data from Kelvin to Celsius.
 
     Parameters
     ----------
     cutout : Cutout
-        The weather data cutout.
+        The weather data cutout containing dewpoint temperature data.
     **params : Any
-        Additional parameters for convert_and_aggregate.
+        Additional parameters for spatial/temporal aggregation. See
+        `convert_and_aggregate` for available options.
 
     Returns
     -------
     xr.DataArray | tuple[xr.DataArray, xr.DataArray]
-        Dewpoint temperature time series and optionally capacity.
+        Dewpoint temperature time-series in degree Celsius. If `return_capacity` is True,
+        returns a tuple of (temperature_data, capacity_data).
     """
     return cutout.convert_and_aggregate(convert_func=convert_temperature, **params)
 
@@ -455,6 +483,45 @@ def convert_coefficient_of_performance(
     c1: float | None,
     c2: float | None,
 ) -> xr.DataArray:
+    """
+    Convert temperature data to coefficient of performance for heat pumps.
+
+    Calculate the coefficient of performance (COP) for heat pumps based on
+    temperature differences between source and sink using a quadratic model.
+
+    Parameters
+    ----------
+    ds : xr.Dataset
+        Dataset containing temperature data.
+    source : str
+        Heat source type, either 'air' or 'soil'.
+    sink_T : float
+        Sink temperature in degree Celsius.
+    c0 : float or None
+        Quadratic model coefficient (intercept). If None, uses defaults:
+        6.81 for air source, 8.77 for soil source.
+    c1 : float or None
+        Quadratic model coefficient (linear term). If None, uses defaults:
+        -0.121 for air source, -0.150 for soil source.
+    c2 : float or None
+        Quadratic model coefficient (quadratic term). If None, uses defaults:
+        0.000630 for air source, 0.000734 for soil source.
+
+    Returns
+    -------
+    xr.DataArray
+        Coefficient of performance values with time and spatial dimensions.
+
+    Raises
+    ------
+    ValueError
+        If source is not 'air' or 'soil'.
+
+    Notes
+    -----
+    The COP is computed using: COP = c0 + c1 * ΔT + c2 * ΔT²
+    where ΔT is the temperature difference between sink and source.
+    """
     if source not in ["air", "soil"]:
         raise ValueError("'source' must be one of ['air', 'soil']")
 
@@ -548,6 +615,37 @@ def coefficient_of_performance(
 def convert_heat_demand(
     ds: xr.Dataset, threshold: float, a: float, constant: float, hour_shift: float
 ) -> xr.DataArray:
+    """
+    Convert temperature data to heat demand using degree-day method.
+
+    Calculate heating degree days based on daily average temperatures
+    and a temperature threshold. Values are computed using the degree-day
+    approximation for building heat demand.
+
+    Parameters
+    ----------
+    ds : xr.Dataset
+        Dataset containing temperature data.
+    threshold : float
+        Base temperature threshold in degree Celsius below which heating
+        is required.
+    a : float
+        Scaling factor relating temperature difference to heat demand.
+    constant : float
+        Constant baseline heat demand.
+    hour_shift : float
+        Time shift in hours to account for local time zones.
+
+    Returns
+    -------
+    xr.DataArray
+        Daily heating degree days with 'time' resampled to daily frequency.
+
+    Notes
+    -----
+    Heat demand is calculated as: demand = constant + a * max(0, threshold - T_daily)
+    where T_daily is the daily average temperature.
+    """
     # Convert temperature to degree Celsius.
     temperature = convert_temperature(ds)
 
@@ -580,45 +678,49 @@ def heat_demand(
     **params: Any,
 ) -> xr.DataArray | tuple[xr.DataArray, xr.DataArray]:
     """
-    Convert outside temperature into daily heat demand using the degree-day
-    approximation.
+    Generate daily heat demand time-series using the degree-day approximation.
 
-    Since "daily average temperature" means different things in
-    different time zones and since xarray coordinates do not handle
-    time zones gracefully like pd.DateTimeIndex, you can provide an
-    hour_shift to redefine when the day starts.
-
-    E.g. for Moscow in winter, hour_shift = 4, for New York in winter,
-    hour_shift = -5
-
-    This time shift applies across the entire spatial scope of ds for
-    all times. More fine-grained control will be built in a some
-    point, i.e. space- and time-dependent time zones.
-
-    WARNING: Because the original data is provided every month, at the
-    month boundaries there is untidiness if you use a time shift. The
-    resulting xarray will have duplicates in the index for the parts
-    of the day in each month at the boundary. You will have to
-    re-average these based on the number of hours in each month for
-    the duplicated day.
+    Converts outside temperature into daily heat demand based on a linear
+    relationship with temperature deviations below a threshold. Supports
+    time zone adjustments for proper daily averaging.
 
     Parameters
     ----------
-    threshold : float
-        Outside temperature in degrees Celsius above which there is no
+    cutout : Cutout
+        The weather data cutout containing temperature data.
+    threshold : float, default 15.0
+        Temperature threshold in degrees Celsius above which there is no
         heat demand.
-    a : float
-        Linear factor relating heat demand to outside temperature.
-    constant : float
-        Constant part of heat demand that does not depend on outside
-        temperature (e.g. due to water heating).
-    hour_shift : float
-        Time shift relative to UTC for taking daily average
+    a : float, default 1.0
+        Linear factor relating heat demand to temperature difference below
+        the threshold.
+    constant : float, default 0.0
+        Constant heat demand component independent of outside temperature
+        (e.g., for water heating).
+    hour_shift : float, default 0.0
+        Time shift in hours relative to UTC for daily averaging.
+        Examples: Moscow winter = 4, New York winter = -5.
+    **params : Any
+        Additional parameters for spatial/temporal aggregation. See
+        `convert_and_aggregate` for available options.
 
-    Note
-    ----
-    You can also specify all of the general conversion arguments
-    documented in the `convert_and_aggregate` function.
+    Returns
+    -------
+    xr.DataArray | tuple[xr.DataArray, xr.DataArray]
+        Daily heat demand time-series in heating degree-days. If `return_capacity`
+        is True, returns a tuple of (heat_demand_data, capacity_data).
+
+    Notes
+    -----
+    The time shift applies uniformly across the entire spatial domain.
+    More fine-grained, space- and time-dependent time zone control will
+    be implemented in future versions.
+
+    Warnings
+    --------
+    When using time shifts with monthly data, boundary effects may occur,
+    potentially creating duplicate daily indices. Manual post-processing
+    may be required to handle these edge cases.
 
     """
     return cutout.convert_and_aggregate(
@@ -635,6 +737,37 @@ def heat_demand(
 def convert_cooling_demand(
     ds: xr.Dataset, threshold: float, a: float, constant: float, hour_shift: float
 ) -> xr.DataArray:
+    """
+    Convert temperature data to cooling demand using degree-day method.
+
+    Calculate cooling degree days based on daily average temperatures
+    and a temperature threshold. Values are computed using the degree-day
+    approximation for building cooling demand.
+
+    Parameters
+    ----------
+    ds : xr.Dataset
+        Dataset containing temperature data.
+    threshold : float
+        Base temperature threshold in degree Celsius above which cooling
+        is required.
+    a : float
+        Scaling factor relating temperature difference to cooling demand.
+    constant : float
+        Constant baseline cooling demand.
+    hour_shift : float
+        Time shift in hours to account for local time zones.
+
+    Returns
+    -------
+    xr.DataArray
+        Daily cooling degree days with 'time' resampled to daily frequency.
+
+    Notes
+    -----
+    Cooling demand is calculated as: demand = constant + a * max(0, T_daily - threshold)
+    where T_daily is the daily average temperature.
+    """
     # Convert temperature to degree Celsius.
     temperature = convert_temperature(ds)
 
@@ -667,48 +800,52 @@ def cooling_demand(
     **params: Any,
 ) -> xr.DataArray | tuple[xr.DataArray, xr.DataArray]:
     """
-    Convert outside temperature into daily cooling demand using the degree-day
-    approximation.
+    Convert outside temperature into daily cooling demand using degree-day approximation.
 
-    Since "daily average temperature" means different things in
-    different time zones and since xarray coordinates do not handle
-    time zones gracefully like pd.DateTimeIndex, you can provide an
-    hour_shift to redefine when the day starts.
-
-    E.g. for Moscow in summer, hour_shift = 3, for New York in summer,
-    hour_shift = -4
-
-    This time shift applies across the entire spatial scope of ds for
-    all times. More fine-grained control will be built in a some
-    point, i.e. space- and time-dependent time zones.
-
-    WARNING: Because the original data is provided every month, at the
-    month boundaries there is untidiness if you use a time shift. The
-    resulting xarray will have duplicates in the index for the parts
-    of the day in each month at the boundary. You will have to
-    re-average these based on the number of hours in each month for
-    the duplicated day.
+    Generate daily cooling demand time-series based on temperature thresholds
+    and degree-day calculations with optional time zone adjustments.
 
     Parameters
     ----------
-    threshold : float
-        Outside temperature in degrees Celsius below which there is no
-        cooling demand. The default 23C is taken as a more liberal
-        estimation following European computational practices
-        (e.g. UK Met Office and European commission take as thresholds
-        22C and 24C, respectively)
-    a : float
-        Linear factor relating cooling demand to outside temperature.
-    constant : float
-        Constant part of cooling demand that does not depend on outside
-        temperature (e.g. due to ventilation).
-    hour_shift : float
-        Time shift relative to UTC for taking daily average
+    cutout : Cutout
+        Weather data cutout containing temperature data.
+    threshold : float, default 23.0
+        Outside temperature threshold in degrees Celsius above which cooling
+        demand occurs. The default 23°C follows European computational practices
+        (UK Met Office and European Commission use 22°C and 24°C respectively).
+    a : float, default 1.0
+        Linear factor relating cooling demand to temperature difference above
+        the threshold.
+    constant : float, default 0.0
+        Constant cooling demand component independent of outside temperature
+        (e.g., for ventilation requirements).
+    hour_shift : float, default 0.0
+        Time shift in hours relative to UTC for daily averaging.
+        Examples: Moscow summer = 3, New York summer = -4.
+    **params : Any
+        Additional parameters for spatial/temporal aggregation. See
+        `convert_and_aggregate` for available options.
 
-    Note
-    ----
+    Returns
+    -------
+    xr.DataArray | tuple[xr.DataArray, xr.DataArray]
+        Daily cooling demand time-series in cooling degree-days. If `return_capacity`
+        is True, returns a tuple of (cooling_demand_data, capacity_data).
+
+    Notes
+    -----
+    The time shift applies uniformly across the entire spatial domain.
+    More fine-grained, space- and time-dependent time zone control will
+    be implemented in future versions.
+
     You can also specify all of the general conversion arguments
     documented in the `convert_and_aggregate` function.
+
+    Warnings
+    --------
+    When using time shifts with monthly data, boundary effects may occur,
+    potentially creating duplicate daily indices. Manual post-processing
+    may be required to handle these edge cases.
 
     """
     return cutout.convert_and_aggregate(
@@ -731,6 +868,41 @@ def convert_solar_thermal(
     c1: float,
     t_store: float,
 ) -> xr.DataArray:
+    """
+    Convert solar radiation to useful thermal energy from solar collectors.
+
+    Compute thermal energy output from solar thermal collectors considering
+    collector efficiency, ambient temperature, and thermal losses.
+
+    Parameters
+    ----------
+    ds : xr.Dataset
+        Dataset containing temperature and solar radiation data.
+    orientation : Callable
+        Function defining collector orientation (azimuth and tilt angles).
+    trigon_model : str
+        Model for computing solar irradiance on tilted surfaces.
+    clearsky_model : str
+        Clear-sky irradiance model for atmospheric corrections.
+    c0 : float
+        Optical efficiency of the solar collector (maximum efficiency).
+    c1 : float
+        Linear heat loss coefficient in W/(m²·K).
+    t_store : float
+        Storage temperature in degree Celsius for thermal loss calculations.
+
+    Returns
+    -------
+    xr.DataArray
+        Useful thermal energy per unit collector area with negative values
+        (heat losses exceeding gains) set to zero.
+
+    Notes
+    -----
+    Thermal efficiency is computed as: η = c0 - c1 * (T_store - T_ambient) / I
+    where I is the incident solar irradiance. The output represents net
+    useful thermal energy after accounting for optical and thermal losses.
+    """
     # Convert temperature to degree Celsius.
     temperature = convert_temperature(ds)
 
@@ -824,7 +996,31 @@ def convert_wind(
     interpolation_method: Literal["logarithmic", "power"],
 ) -> xr.DataArray:
     """
-    Convert wind speeds for turbine to wind energy generation.
+    Convert wind speeds to wind energy generation using turbine power curve.
+
+    Extrapolates wind speeds to turbine hub height and applies the turbine's
+    power curve to compute electrical power output per unit capacity.
+
+    Parameters
+    ----------
+    ds : xr.Dataset
+        Dataset containing wind speed data at reference heights.
+    turbine : TurbineConfig
+        Wind turbine configuration containing power curve data (V, POW),
+        hub height, and rated power (P).
+    interpolation_method : {'logarithmic', 'power'}
+        Method for extrapolating wind speeds to hub height.
+
+    Returns
+    -------
+    xr.DataArray
+        Wind power generation per unit of installed capacity, with values
+        between 0 and 1 representing capacity factors.
+
+    Notes
+    -----
+    The function performs linear interpolation of the turbine power curve
+    to match wind speeds at hub height with corresponding power outputs.
     """
     V, POW, hub_height, P = itemgetter("V", "POW", "hub_height", "P")(turbine)
 
@@ -860,14 +1056,17 @@ def wind(
     **params: Any,
 ) -> xr.DataArray | tuple[xr.DataArray, xr.DataArray]:
     """
-    Generate wind generation time-series.
+    Generate wind power generation time-series.
 
-    Extrapolates wind speed to hub height (using logarithmic or power law) and
-    evaluates the power curve.
+    Extrapolates wind speeds to turbine hub height using either logarithmic
+    or power law methods, then evaluates the turbine power curve to compute
+    generation per unit of installed capacity.
 
     Parameters
     ----------
-    turbine : str or dict
+    cutout : Cutout
+        Weather data cutout containing wind speed data.
+    turbine : str | Path | dict
         A turbineconfig dictionary with the keys 'hub_height' for the
         hub height and 'V', 'POW' defining the power curve.
         Alternatively a str refering to a local or remote turbine configuration
@@ -875,21 +1074,30 @@ def wind(
         configurations can also be modified with this function. E.g. to setup a different hub
         height from the one used in the yaml file,one would write
                 "turbine=get_windturbineconfig(“NREL_ReferenceTurbine_5MW_offshore”)|{“hub_height”:120}"
-    smooth : bool or dict
+    smooth : bool | dict, default False
         If True smooth power curve with a gaussian kernel as
         determined for the Danish wind fleet to Delta_v = 1.27 and
         sigma = 2.29. A dict allows to tune these values.
-    add_cutout_windspeed : bool
+    add_cutout_windspeed : bool, default False
         If True and in case the power curve does not end with a zero, will add zero power
         output at the highest wind speed in the power curve. If False, a warning will be
-        raised if the power curve does not have a cut-out wind speed. The default is
-        False.
-    interpolation_method : {"logarithmic", "power"}
+        raised if the power curve does not have a cut-out wind speed.
+    interpolation_method : {'logarithmic', 'power'}, default 'logarithmic'
         Law to interpolate wind speed to turbine hub height. Refer to
         :py:func:`atlite.wind.extrapolate_wind_speed`.
+    **params : Any
+        Additional parameters for spatial/temporal aggregation. See
+        `convert_and_aggregate` for available options.
 
-    Note
-    ----
+    Returns
+    -------
+    xr.DataArray | tuple[xr.DataArray, xr.DataArray]
+        Wind power generation time-series as capacity factors (per unit of
+        installed capacity). If `return_capacity` is True, returns a tuple
+        of (generation_data, capacity_data).
+
+    Notes
+    -----
     You can also specify all of the general conversion arguments
     documented in the `convert_and_aggregate` function.
 
@@ -921,6 +1129,42 @@ def convert_irradiation(
     trigon_model: str = "simple",
     clearsky_model: str = "simple",
 ) -> xr.DataArray:
+    """
+    Convert horizontal solar irradiance to tilted surface irradiance.
+
+    Compute solar irradiance on tilted surfaces considering panel orientation,
+    solar position, and atmospheric conditions. Supports fixed and tracking
+    configurations.
+
+    Parameters
+    ----------
+    ds : xr.Dataset
+        Dataset containing solar irradiance and atmospheric data.
+    orientation : Callable
+        Function defining surface orientation (azimuth and tilt angles).
+    tracking : str or None, default None
+        Solar tracking mode. If None, uses fixed orientation.
+    irradiation : str, default 'total'
+        Type of irradiation to compute ('total', 'direct', or 'diffuse').
+    trigon_model : str, default 'simple'
+        Model for computing irradiance on tilted surfaces.
+    clearsky_model : str, default 'simple'
+        Clear-sky irradiance model for atmospheric corrections.
+
+    Returns
+    -------
+    xr.DataArray
+        Solar irradiance on the tilted surface with appropriate units
+        and variable name attributes.
+
+    Notes
+    -----
+    The function accounts for:
+    - Solar position (elevation and azimuth angles)
+    - Surface orientation relative to the sun
+    - Atmospheric attenuation and scattering effects
+    - Tracking system behavior if specified
+    """
     solar_position = SolarPosition(ds)
     surface_orientation = SurfaceOrientation(ds, solar_position, orientation, tracking)
     irradiation = TiltedIrradiation(
@@ -954,39 +1198,45 @@ def irradiation(
 
     Parameters
     ----------
-    orientation : str, dict or callback
+    cutout : Cutout
+        Weather data cutout containing solar radiation data.
+    orientation : str, dict, or Callable
         Panel orientation can be chosen from either
         'latitude_optimal', a constant orientation {'slope': 0.0,
         'azimuth': 0.0} or a callback function with the same signature
         as the callbacks generated by the
         'atlite.pv.orientation.make_*' functions.
-    irradiation : str
+    irradiation : str, default 'total'
         The irradiation quantity to be returned. Defaults to "total" for total
         combined irradiation. Other options include "direct" for direct irradiation,
-        "diffuse" for diffuse irradation, and "ground" for irradiation reflected
+        "diffuse" for diffuse irradiation, and "ground" for irradiation reflected
         by the ground via albedo. NOTE: "ground" irradiation is not calculated
         by all `trigon_model` options in the `convert_irradiation` method,
         so use with caution!
-    tracking : None or str:
-        None for no tracking, default
-        'horizontal' for 1-axis horizontal tracking
-        'tilted_horizontal' for 1-axis horizontal tracking with tilted axis
-        'vertical' for 1-axis vertical tracking
-        'dual' for 2-axis tracking
-    clearsky_model : str or None
+    tracking : str | None, optional
+        Solar tracking configuration. Options are:
+        - None : no tracking (default)
+        - 'horizontal' : 1-axis horizontal tracking
+        - 'tilted_horizontal' : 1-axis horizontal tracking with tilted axis
+        - 'vertical' : 1-axis vertical tracking
+        - 'dual' : 2-axis tracking
+    clearsky_model : str | None, optional
         Either the 'simple' or the 'enhanced' Reindl clearsky
-        model. The default choice of None will choose dependending on
+        model. The default choice of None will choose depending on
         data availability, since the 'enhanced' model also
         incorporates ambient air temperature and relative humidity.
+    **params : Any
+        Additional parameters for spatial/temporal aggregation. See
+        `convert_and_aggregate` for available options.
 
     Returns
     -------
-    irradiation : xr.DataArray
-        The desired irradiation quantity on the tilted surface. Defaults to
-        "total".
+    xr.DataArray | tuple[xr.DataArray, xr.DataArray]
+        The desired irradiation quantity on the tilted surface. If
+        `return_capacity` is True, returns a tuple of (irradiation_data, capacity_data).
 
-    Note
-    ----
+    Notes
+    -----
     You can also specify all of the general conversion arguments
     documented in the `convert_and_aggregate` function.
 
@@ -1018,6 +1268,43 @@ def convert_pv(
     trigon_model: str = "simple",
     clearsky_model: str = "simple",
 ) -> xr.DataArray:
+    """
+    Convert solar irradiance to photovoltaic power generation.
+
+    Compute PV power output considering panel characteristics, solar position,
+    surface orientation, and environmental conditions including temperature
+    effects on panel efficiency.
+
+    Parameters
+    ----------
+    ds : xr.Dataset
+        Dataset containing solar irradiance and temperature data.
+    panel : dict
+        Solar panel configuration containing efficiency parameters and
+        temperature coefficients.
+    orientation : Callable
+        Function defining panel orientation (azimuth and tilt angles).
+    tracking : str or None
+        Solar tracking mode. If None, uses fixed orientation.
+    trigon_model : str, default 'simple'
+        Model for computing irradiance on tilted surfaces.
+    clearsky_model : str, default 'simple'
+        Clear-sky irradiance model for atmospheric corrections.
+
+    Returns
+    -------
+    xr.DataArray
+        PV power generation per unit of installed capacity with values
+        between 0 and 1 representing capacity factors.
+
+    Notes
+    -----
+    The function accounts for:
+    - Solar irradiance on tilted panel surface
+    - Temperature-dependent panel efficiency
+    - Panel characteristics and specifications
+    - Tracking system behavior if specified
+    """
     solar_position = SolarPosition(ds)
     surface_orientation = SurfaceOrientation(ds, solar_position, orientation, tracking)
     irradiation = TiltedIrradiation(
@@ -1046,43 +1333,48 @@ def pv(
     **params: Any,
 ) -> xr.DataArray | tuple[xr.DataArray, xr.DataArray]:
     """
-    Convert downward-shortwave, upward-shortwave radiation flux and ambient
-    temperature into a pv generation time-series.
+    Generate photovoltaic (PV) power generation time-series.
+
+    Converts solar irradiance and ambient temperature into PV generation
+    using panel electrical models and orientation specifications.
 
     Parameters
     ----------
-    panel : str or dict
-        Panel config dictionary with the parameters for the electrical
-        model in [3]. Alternatively, name of yaml file stored in
-        atlite.config.solarpanel_dir.
-    orientation : str, dict or callback
-        Panel orientation can be chosen from either
-        'latitude_optimal', a constant orientation {'slope': 0.0,
-        'azimuth': 0.0} or a callback function with the same signature
-        as the callbacks generated by the
-        'atlite.pv.orientation.make_*' functions.
-    tracking : None or str:
-        None for no tracking, default
-        'horizontal' for 1-axis horizontal tracking
-        'tilted_horizontal' for 1-axis horizontal tracking with tilted axis
-        'vertical' for 1-axis vertical tracking
-        'dual' for 2-axis tracking
-    clearsky_model : str or None
-        Either the 'simple' or the 'enhanced' Reindl clearsky
-        model. The default choice of None will choose dependending on
-        data availability, since the 'enhanced' model also
-        incorporates ambient air temperature and relative humidity.
+    cutout : Cutout
+        The weather data cutout containing solar radiation and temperature data.
+    panel : str | Path | dict
+        Panel configuration dictionary with electrical model parameters,
+        or a string/Path reference to a stored panel configuration file.
+    orientation : dict[str, float] | str | Callable
+        Panel orientation specification. Can be 'latitude_optimal', a constant
+        orientation dict with 'slope' and 'azimuth' keys (in degrees), or a
+        callable function for dynamic orientation.
+    tracking : str | None, optional
+        Solar tracking configuration. Options include:
+        - None: No tracking (default)
+        - 'horizontal': 1-axis horizontal tracking
+        - 'tilted_horizontal': 1-axis tilted horizontal tracking
+        - 'vertical': 1-axis vertical tracking
+        - 'dual': 2-axis tracking
+    clearsky_model : str | None, optional
+        Clearsky model for diffuse irradiation calculation. Either 'simple'
+        or 'enhanced' Reindl model. If None, automatically selects based on
+        data availability ('enhanced' requires temperature and humidity).
+    **params : Any
+        Additional parameters for spatial/temporal aggregation. See
+        `convert_and_aggregate` for available options.
 
     Returns
     -------
-    pv : xr.DataArray
-        Time-series or capacity factors based on additional general
-        conversion arguments.
+    xr.DataArray | tuple[xr.DataArray, xr.DataArray]
+        PV power generation time-series as capacity factors (per unit of
+        installed capacity). If `return_capacity` is True, returns a tuple
+        of (generation_data, capacity_data).
 
-    Note
-    ----
-    You can also specify all of the general conversion arguments
-    documented in the `convert_and_aggregate` function.
+    Notes
+    -----
+    You can specify all general conversion arguments documented in the
+    `convert_and_aggregate` function for spatial and temporal aggregation.
 
     References
     ----------
@@ -1115,6 +1407,36 @@ def pv(
 
 # solar CSP
 def convert_csp(ds: xr.Dataset, installation: dict) -> xr.DataArray:
+    """
+    Convert solar radiation data to concentrated solar power (CSP) generation.
+
+    This function converts direct solar radiation data into CSP generation 
+    considering the efficiency characteristics of the specific installation
+    and solar position.
+
+    Parameters
+    ----------
+    ds : xr.Dataset
+        Dataset containing solar radiation data.
+    installation : dict
+        CSP installation configuration containing efficiency data and
+        technology specifications.
+
+    Returns
+    -------
+    xr.DataArray
+        CSP generation per unit of installed capacity with time and spatial
+        dimensions preserved.
+
+    Notes
+    -----
+    The function handles different CSP technologies:
+    - 'parabolic trough': Uses direct horizontal irradiance (DHI)
+    - 'solar tower': Uses direct normal irradiance (DNI)
+    
+    Output is normalized by reference irradiance and clipped to a maximum
+    of 1.0 per unit capacity.
+    """
     solar_position = SolarPosition(ds)
 
     tech = installation["technology"]
@@ -1157,30 +1479,34 @@ def csp(
     **params: Any,
 ) -> xr.DataArray | tuple[xr.DataArray, xr.DataArray]:
     """
-    Convert downward shortwave direct radiation into a csp generation time-
-    series.
+    Convert downward shortwave direct radiation into CSP generation time-series.
 
     Parameters
     ----------
-    installation: str or xr.DataArray
+    cutout : Cutout
+        Weather data cutout containing solar radiation data.
+    installation : str | Path | dict
         CSP installation details determining the solar field efficiency dependent on
         the local solar position. Can be either the name of one of the standard
         installations provided through `atlite.cspinstallationsPanel` or an
         xarray.DataArray with 'azimuth' (in rad) and 'altitude' (in rad) coordinates
         and an 'efficiency' (in p.u.) entry.
-    technology: str
+    technology : str | None, optional
         Overwrite CSP technology from the installation configuration. The technology
         affects which direct radiation is considered. Either 'parabolic trough' (DHI)
         or 'solar tower' (DNI).
+    **params : Any
+        Additional parameters for spatial/temporal aggregation. See
+        `convert_and_aggregate` for available options.
 
     Returns
     -------
-    csp : xr.DataArray
-        Time-series or capacity factors based on additional general
-        conversion arguments.
+    xr.DataArray | tuple[xr.DataArray, xr.DataArray]
+        CSP generation time-series or capacity factors. If `return_capacity`
+        is True, returns a tuple of (generation_data, capacity_data).
 
-    Note
-    ----
+    Notes
+    -----
     You can also specify all of the general conversion arguments
     documented in the `convert_and_aggregate` function.
 
@@ -1210,6 +1536,29 @@ def csp(
 
 # hydro
 def convert_runoff(ds: xr.Dataset, weight_with_height: bool = True) -> xr.DataArray:
+    """
+    Convert runoff data with optional height weighting.
+
+    Extract runoff data from the dataset and optionally weight it by
+    topographic height to account for elevation effects on runoff generation.
+
+    Parameters
+    ----------
+    ds : xr.Dataset
+        Dataset containing runoff and height data.
+    weight_with_height : bool, default True
+        Whether to weight runoff by topographic height.
+
+    Returns
+    -------
+    xr.DataArray
+        Runoff data, optionally weighted by height.
+
+    Notes
+    -----
+    Height weighting is commonly used in hydrological modeling to account
+    for orographic effects on precipitation and subsequent runoff generation.
+    """
     runoff = ds["runoff"]
 
     if weight_with_height:
@@ -1225,6 +1574,47 @@ def runoff(
     normalize_using_yearly: pd.Series | None = None,
     **params: Any,
 ) -> xr.DataArray | tuple[xr.DataArray, xr.DataArray]:
+    """
+    Convert runoff data with optional smoothing and normalization.
+
+    This function processes runoff data from weather reanalysis datasets
+    with various post-processing options including temporal smoothing,
+    threshold filtering, and normalization to observed data.
+
+    Parameters
+    ----------
+    cutout : Cutout
+        Cutout object containing runoff data and spatial metadata.
+    smooth : int, bool, or None, default None
+        Temporal smoothing window in hours. If True, defaults to 168 hours
+        (one week). If None, no smoothing is applied.
+    lower_threshold_quantile : float, bool, or None, default None
+        Quantile threshold below which runoff values are set to zero.
+        If True, defaults to 0.005 (0.5th percentile). If None, no
+        threshold filtering is applied.
+    normalize_using_yearly : pd.Series or None, default None
+        Annual runoff data for normalization. Index should contain years
+        and values the corresponding annual runoff volumes.
+    **params : Any
+        Additional parameters passed to the `convert_and_aggregate` method.
+
+    Returns
+    -------
+    xr.DataArray or tuple[xr.DataArray, xr.DataArray]
+        Processed runoff time series. Returns tuple if `return_capacity`
+        is specified in params.
+
+    Notes
+    -----
+    The function applies processing steps in sequence:
+    1. Convert raw runoff data using `convert_runoff`
+    2. Apply temporal smoothing if requested
+    3. Filter values below threshold quantile if specified
+    4. Normalize to yearly observations if provided
+
+    Normalization requires at least one full year of data and uses only
+    overlapping years between the dataset and reference data.
+    """
     result = cutout.convert_and_aggregate(convert_func=convert_runoff, **params)
 
     if smooth is not None:
@@ -1278,23 +1668,37 @@ def hydro(
     **kwargs: Any,
 ) -> xr.DataArray:
     """
-    Compute inflow time-series for `plants` by aggregating over catchment
-    basins from `hydrobasins`
+    Generate hydropower inflow time-series for plants using catchment basins.
+
+    Computes inflow time-series by aggregating surface runoff over catchment
+    basins and routing water flows to hydropower plant locations.
 
     Parameters
     ----------
+    cutout : Cutout
+        The weather data cutout containing surface runoff data.
     plants : pd.DataFrame
-        Run-of-river plants or dams with lon, lat columns.
-    hydrobasins : str|gpd.GeoDataFrame
-        Filename or GeoDataFrame of one level of the HydroBASINS dataset.
-    flowspeed : float
-        Average speed of water flows to estimate the water travel time from
-        basin to plant (default: 1 m/s).
-    weight_with_height : bool
-        Whether surface runoff should be weighted by potential height (probably
-        better for coarser resolution).
-    show_progress : bool
-        Whether to display progressbars.
+        Hydropower plants (run-of-river or dams) with 'lon' and 'lat' columns
+        specifying plant locations.
+    hydrobasins : str | gpd.GeoDataFrame
+        HydroBASINS dataset for catchment delineation. Can be a filename
+        or GeoDataFrame containing basin geometries.
+    flowspeed : float, default 1
+        Average water flow speed in m/s for estimating travel time from
+        basin to plant location.
+    weight_with_height : bool, default False
+        Whether to weight surface runoff by elevation (recommended for
+        coarser spatial resolution).
+    show_progress : bool, default False
+        Whether to display progress bars during computation.
+    **kwargs : Any
+        Additional keyword arguments passed to runoff computation.
+
+    Returns
+    -------
+    xr.DataArray
+        Hydropower inflow time-series for each plant, accounting for
+        catchment aggregation and flow routing delays.
 
     References
     ----------
@@ -1343,44 +1747,54 @@ def convert_line_rating(
     alpha: float = 0.6,
 ) -> xr.DataArray:
     """
-    Convert the cutout data to dynamic line rating time series.
+    Convert weather data to dynamic line rating time series.
 
-    The formulation is based on:
-
-    [1]“IEEE Std 738™-2012 (Revision of IEEE Std 738-2006/Incorporates IEEE Std
-        738-2012/Cor 1-2013), IEEE Standard for Calculating the Current-Temperature
-        Relationship of Bare Overhead Conductors,” p. 72.
-
-    The following simplifications/assumptions were made:
-        1. Wind speed are taken at height 100 meters above ground. However, ironmen
-           and transmission lines are typically at 50-60 meters.
-        2. Solar heat influx is set proportionally to solar short wave influx.
-        3. The incidence angle of the solar heat influx is assumed to be 90 degree.
-
+    Calculate maximum allowable current for overhead transmission lines
+    based on thermal balance considering wind cooling, solar heating,
+    and conductor characteristics following IEEE-738 standard.
 
     Parameters
     ----------
     ds : xr.Dataset
-        Subset of the cutout data including all weather cells overlapping with
-        the line.
-    psi : int/float
-        Azimuth angle of the line in degree, that is the incidence angle of the line
-        with a pointer directing north (90 is east, 180 is south, 270 is west).
+        Weather dataset containing temperature, wind speed, wind direction,
+        solar radiation, and elevation data for grid cells overlapping
+        with the transmission line.
+    psi : float
+        Azimuth angle of the transmission line in degrees, measured as
+        the angle from north (0° = north, 90° = east, 180° = south, 270° = west).
     R : float
-        Resistance of the conductor in [Ω/m] at maximally allowed temperature Ts.
-    D : float,
-        Conductor diameter.
-    Ts : float
-        Maximally allowed surface temperature (typically 100°C).
-    epsilon : float
-        Conductor emissivity.
-    alpha : float
-        Conductor absorptivity.
+        Electrical resistance of the conductor in Ω/m at maximum allowed
+        temperature Ts.
+    D : float, default 0.028
+        Conductor diameter in meters.
+    Ts : float, default 373
+        Maximum allowed surface temperature in Kelvin (typically 100°C = 373 K).
+    epsilon : float, default 0.6
+        Conductor emissivity for radiative heat loss (dimensionless, 0-1).
+    alpha : float, default 0.6
+        Conductor absorptivity for solar radiation (dimensionless, 0-1).
 
     Returns
     -------
-    Imax
-        xr.DataArray giving the maximal current capacity per timestep in Ampere.
+    xr.DataArray
+        Maximum allowable current capacity per timestep in Amperes, with
+        time and spatial dimensions preserved from input dataset.
+
+    Notes
+    -----
+    The calculation is based on IEEE Std 738™-2012 with the following
+    simplifications and assumptions:
+    
+    1. Wind speeds are taken at 100 meters height, though transmission
+       lines are typically at 50-60 meters height.
+    2. Solar heat influx is proportional to shortwave radiation flux.
+    3. Solar incidence angle is assumed to be 90 degrees.
+
+    References
+    ----------
+    [1] IEEE Std 738™-2012 (Revision of IEEE Std 738-2006/Incorporates IEEE Std
+        738-2012/Cor 1-2013), IEEE Standard for Calculating the Current-Temperature
+        Relationship of Bare Overhead Conductors, p. 72.
 
     """
     Ta = ds["temperature"]
@@ -1457,48 +1871,42 @@ def line_rating(
     **params: Any,
 ) -> xr.DataArray:
     """
-    Create a dynamic line rating time series based on the IEEE-738 standard.
+    Create dynamic line rating time series based on IEEE-738 standard.
 
-    [1].
-
-    The steady-state capacity is derived from the balance between heat
-    losses due to radiation and convection, and heat gains due to solar influx
-    and conductur resistance. For more information on assumptions and modifications
-    see ``convert_line_rating``.
-
-
-    [1]“IEEE Std 738™-2012 (Revision of IEEE Std 738-2006/Incorporates IEEE Std
-        738-2012/Cor 1-2013), IEEE Standard for Calculating the Current-Temperature
-        Relationship of Bare Overhead Conductors,” p. 72.
-
+    Calculate maximum allowable current for overhead transmission lines
+    using thermal balance equations. The steady-state capacity is derived
+    from the balance between heat losses (radiation and convection) and
+    heat gains (solar influx and conductor resistance). For more information
+    on assumptions and modifications see ``convert_line_rating``.
 
     Parameters
     ----------
-    cutout : atlite.Cutout
-    shapes : geopandas.GeoSeries
-        Line shapes of the lines.
-    line_resistance : float/series
-        Resistance of the lines in Ohm/meter. Alternatively in p.u. system in
-        Ohm/1000km (see example below).
-    show_progress : boolean, default False
-        Whether to show a progress bar.
-    dask_kwargs : dict, default {}
-        Dict with keyword arguments passed to `dask.compute`.
-    params : keyword arguments as float/series
-        Arguments to tweak/modify the line rating calculations based on [1].
-        Defaults are:
-            * D : 0.028 (conductor diameter)
-            * Ts : 373 (maximally allowed surface temperature)
-            * epsilon : 0.6 (conductor emissivity)
-            * alpha : 0.6 (conductor absorptivity)
+    cutout : Cutout
+        The weather data cutout containing temperature, wind, and radiation data.
+    shapes : gpd.GeoSeries
+        Geographic line shapes representing transmission lines.
+    line_resistance : float | pd.Series
+        Electrical resistance of transmission lines in Ohm/meter. Can be a
+        single value or series with per-line values.
+    show_progress : bool, default False
+        Whether to display a progress bar during computation.
+    dask_kwargs : dict[str, Any] | None, optional
+        Additional keyword arguments passed to `dask.compute()`.
+    **params : Any
+        Additional conductor parameters for thermal calculations. Default values:
+        - D : 0.028 (conductor diameter in meters)
+        - Ts : 373 (maximum allowed surface temperature in Kelvin)
+        - epsilon : 0.6 (conductor emissivity)
+        - alpha : 0.6 (conductor absorptivity)
 
     Returns
     -------
-    Current thermal limit timeseries with dimensions time x lines in Ampere.
+    xr.DataArray
+        Dynamic thermal capacity time-series with dimensions (time x lines)
+        giving maximum allowable current in Amperes for each transmission line.
 
-    Example
-    -------
-
+    Examples
+    --------
     >>> import pypsa
     >>> import xarray as xr
     >>> import atlite
@@ -1521,6 +1929,12 @@ def line_rating(
     >>> i = cutout.line_rating(shapes, n.lines.r/n.lines.length)
     >>> v = xr.DataArray(n.lines.v_nom, dims='name')
     >>> s = np.sqrt(3) * i * v / 1e3 # in MW
+
+    References
+    ----------
+    [1] IEEE Std 738™-2012 (Revision of IEEE Std 738-2006/Incorporates IEEE Std
+        738-2012/Cor 1-2013), IEEE Standard for Calculating the Current-Temperature
+        Relationship of Bare Overhead Conductors, p. 72.
 
     """
     # Handle mutable default arguments
