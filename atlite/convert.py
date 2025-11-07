@@ -124,7 +124,7 @@ def convert_and_aggregate(
     # Handle mutable default arguments
     if dask_kwargs is None:
         dask_kwargs = {}
-    
+
     # Check whether any of matrix, shapes or layout is given. If not, no
     # aggregateion is to be done.
     aggregate = any(v is not None for v in [layout, shapes, matrix])
@@ -316,10 +316,12 @@ def get_matrix_and_index(
     return matrix, index
 
 
-def maybe_progressbar(ds: xr.DataArray, show_progress: bool, **kwargs: Any) -> xr.DataArray:
+def maybe_progressbar(
+    ds: xr.DataArray, show_progress: bool, **kwargs: Any
+) -> xr.DataArray:
     """
     Load a xr.dataset with dask arrays either with or without progressbar.
-    
+
     Parameters
     ----------
     ds : xr.DataArray
@@ -328,7 +330,7 @@ def maybe_progressbar(ds: xr.DataArray, show_progress: bool, **kwargs: Any) -> x
         Whether to show a progress bar.
     **kwargs : Any
         Additional keyword arguments passed to ds.load().
-        
+
     Returns
     -------
     xr.DataArray
@@ -346,12 +348,12 @@ def maybe_progressbar(ds: xr.DataArray, show_progress: bool, **kwargs: Any) -> x
 def convert_temperature(ds: xr.Dataset) -> xr.DataArray:
     """
     Return temperature in degree Celsius.
-    
+
     Parameters
     ----------
     ds : xr.Dataset
         Dataset containing temperature data.
-        
+
     Returns
     -------
     xr.DataArray
@@ -382,17 +384,19 @@ def convert_temperature(ds: xr.Dataset) -> xr.DataArray:
     return ds
 
 
-def temperature(cutout: Cutout, **params: Any) -> xr.DataArray | tuple[xr.DataArray, xr.DataArray]:
+def temperature(
+    cutout: Cutout, **params: Any
+) -> xr.DataArray | tuple[xr.DataArray, xr.DataArray]:
     """
     Convert and aggregate temperature data.
-    
+
     Parameters
     ----------
     cutout : Cutout
         The weather data cutout.
     **params : Any
         Additional parameters for convert_and_aggregate.
-        
+
     Returns
     -------
     xr.DataArray | tuple[xr.DataArray, xr.DataArray]
@@ -401,17 +405,19 @@ def temperature(cutout: Cutout, **params: Any) -> xr.DataArray | tuple[xr.DataAr
     return cutout.convert_and_aggregate(convert_func=convert_temperature, **params)
 
 
-def soil_temperature(cutout: Cutout, **params: Any) -> xr.DataArray | tuple[xr.DataArray, xr.DataArray]:
+def soil_temperature(
+    cutout: Cutout, **params: Any
+) -> xr.DataArray | tuple[xr.DataArray, xr.DataArray]:
     """
     Convert and aggregate soil temperature data.
-    
+
     Parameters
     ----------
     cutout : Cutout
         The weather data cutout.
     **params : Any
         Additional parameters for convert_and_aggregate.
-        
+
     Returns
     -------
     xr.DataArray | tuple[xr.DataArray, xr.DataArray]
@@ -420,17 +426,19 @@ def soil_temperature(cutout: Cutout, **params: Any) -> xr.DataArray | tuple[xr.D
     return cutout.convert_and_aggregate(convert_func=convert_temperature, **params)
 
 
-def dewpoint_temperature(cutout: Cutout, **params: Any) -> xr.DataArray | tuple[xr.DataArray, xr.DataArray]:
+def dewpoint_temperature(
+    cutout: Cutout, **params: Any
+) -> xr.DataArray | tuple[xr.DataArray, xr.DataArray]:
     """
     Convert and aggregate dewpoint temperature data.
-    
+
     Parameters
     ----------
     cutout : Cutout
         The weather data cutout.
     **params : Any
         Additional parameters for convert_and_aggregate.
-        
+
     Returns
     -------
     xr.DataArray | tuple[xr.DataArray, xr.DataArray]
@@ -440,19 +448,19 @@ def dewpoint_temperature(cutout: Cutout, **params: Any) -> xr.DataArray | tuple[
 
 
 def convert_coefficient_of_performance(
-    ds: xr.Dataset, 
-    source: str, 
-    sink_T: float, 
-    c0: float | None, 
-    c1: float | None, 
-    c2: float | None
+    ds: xr.Dataset,
+    source: str,
+    sink_T: float,
+    c0: float | None,
+    c1: float | None,
+    c2: float | None,
 ) -> xr.DataArray:
     if source not in ["air", "soil"]:
         raise ValueError("'source' must be one of ['air', 'soil']")
 
     # Get the source temperature and set default coefficients if not provided.
     source_T = convert_temperature(ds)
-    
+
     match source:
         case "air":
             if c0 is None:
@@ -483,13 +491,13 @@ def convert_coefficient_of_performance(
 
 
 def coefficient_of_performance(
-    cutout: Cutout, 
-    source: str = "air", 
-    sink_T: float = 55.0, 
-    c0: float | None = None, 
-    c1: float | None = None, 
-    c2: float | None = None, 
-    **params: Any
+    cutout: Cutout,
+    source: str = "air",
+    sink_T: float = 55.0,
+    c0: float | None = None,
+    c1: float | None = None,
+    c2: float | None = None,
+    **params: Any,
 ) -> xr.DataArray | tuple[xr.DataArray, xr.DataArray]:
     """
     Convert ambient or soil temperature to coefficient of performance (COP) of
@@ -520,7 +528,7 @@ def coefficient_of_performance(
         Coefficient of performance time series and optionally capacity.
 
     References
-    ---------
+    ----------
     [1] Staffell, Brett, Brandon, Hawkes, A review of domestic heat pumps,
     Energy & Environmental Science (2012), 5, 9291-9306,
     https://doi.org/10.1039/C2EE22653G.
@@ -538,11 +546,7 @@ def coefficient_of_performance(
 
 # heat demand
 def convert_heat_demand(
-    ds: xr.Dataset, 
-    threshold: float, 
-    a: float, 
-    constant: float, 
-    hour_shift: float
+    ds: xr.Dataset, threshold: float, a: float, constant: float, hour_shift: float
 ) -> xr.DataArray:
     # Convert temperature to degree Celsius.
     temperature = convert_temperature(ds)
@@ -568,12 +572,12 @@ def convert_heat_demand(
 
 
 def heat_demand(
-    cutout: Cutout, 
-    threshold: float = 15.0, 
-    a: float = 1.0, 
-    constant: float = 0.0, 
-    hour_shift: float = 0.0, 
-    **params: Any
+    cutout: Cutout,
+    threshold: float = 15.0,
+    a: float = 1.0,
+    constant: float = 0.0,
+    hour_shift: float = 0.0,
+    **params: Any,
 ) -> xr.DataArray | tuple[xr.DataArray, xr.DataArray]:
     """
     Convert outside temperature into daily heat demand using the degree-day
@@ -629,11 +633,7 @@ def heat_demand(
 
 # cooling demand
 def convert_cooling_demand(
-    ds: xr.Dataset, 
-    threshold: float, 
-    a: float, 
-    constant: float, 
-    hour_shift: float
+    ds: xr.Dataset, threshold: float, a: float, constant: float, hour_shift: float
 ) -> xr.DataArray:
     # Convert temperature to degree Celsius.
     temperature = convert_temperature(ds)
@@ -659,12 +659,12 @@ def convert_cooling_demand(
 
 
 def cooling_demand(
-    cutout: Cutout, 
-    threshold: float = 23.0, 
-    a: float = 1.0, 
-    constant: float = 0.0, 
-    hour_shift: float = 0.0, 
-    **params: Any
+    cutout: Cutout,
+    threshold: float = 23.0,
+    a: float = 1.0,
+    constant: float = 0.0,
+    hour_shift: float = 0.0,
+    **params: Any,
 ) -> xr.DataArray | tuple[xr.DataArray, xr.DataArray]:
     """
     Convert outside temperature into daily cooling demand using the degree-day
@@ -1011,12 +1011,12 @@ def irradiation(
 
 # solar PV
 def convert_pv(
-    ds: xr.Dataset, 
-    panel: dict, 
-    orientation: Callable, 
-    tracking: str | None, 
-    trigon_model: str = "simple", 
-    clearsky_model: str = "simple"
+    ds: xr.Dataset,
+    panel: dict,
+    orientation: Callable,
+    tracking: str | None,
+    trigon_model: str = "simple",
+    clearsky_model: str = "simple",
 ) -> xr.DataArray:
     solar_position = SolarPosition(ds)
     surface_orientation = SurfaceOrientation(ds, solar_position, orientation, tracking)
@@ -1038,12 +1038,12 @@ def convert_pv(
 
 
 def pv(
-    cutout: Cutout, 
-    panel: str | Path | dict, 
-    orientation: dict[str, float] | str | Callable, 
-    tracking: str | None = None, 
-    clearsky_model: str | None = None, 
-    **params: Any
+    cutout: Cutout,
+    panel: str | Path | dict,
+    orientation: dict[str, float] | str | Callable,
+    tracking: str | None = None,
+    clearsky_model: str | None = None,
+    **params: Any,
 ) -> xr.DataArray | tuple[xr.DataArray, xr.DataArray]:
     """
     Convert downward-shortwave, upward-shortwave radiation flux and ambient
@@ -1151,10 +1151,10 @@ def convert_csp(ds: xr.Dataset, installation: dict) -> xr.DataArray:
 
 
 def csp(
-    cutout: Cutout, 
-    installation: str | Path | dict, 
-    technology: str | None = None, 
-    **params: Any
+    cutout: Cutout,
+    installation: str | Path | dict,
+    technology: str | None = None,
+    **params: Any,
 ) -> xr.DataArray | tuple[xr.DataArray, xr.DataArray]:
     """
     Convert downward shortwave direct radiation into a csp generation time-
@@ -1334,13 +1334,13 @@ def hydro(
 
 
 def convert_line_rating(
-    ds: xr.Dataset, 
-    psi: float, 
-    R: float, 
-    D: float = 0.028, 
-    Ts: float = 373, 
-    epsilon: float = 0.6, 
-    alpha: float = 0.6
+    ds: xr.Dataset,
+    psi: float,
+    R: float,
+    D: float = 0.028,
+    Ts: float = 373,
+    epsilon: float = 0.6,
+    alpha: float = 0.6,
 ) -> xr.DataArray:
     """
     Convert the cutout data to dynamic line rating time series.
@@ -1449,12 +1449,12 @@ def convert_line_rating(
 
 
 def line_rating(
-    cutout: Cutout, 
-    shapes: gpd.GeoSeries, 
-    line_resistance: float | pd.Series, 
-    show_progress: bool = False, 
-    dask_kwargs: dict[str, Any] | None = None, 
-    **params: Any
+    cutout: Cutout,
+    shapes: gpd.GeoSeries,
+    line_resistance: float | pd.Series,
+    show_progress: bool = False,
+    dask_kwargs: dict[str, Any] | None = None,
+    **params: Any,
 ) -> xr.DataArray:
     """
     Create a dynamic line rating time series based on the IEEE-738 standard.
@@ -1526,7 +1526,7 @@ def line_rating(
     # Handle mutable default arguments
     if dask_kwargs is None:
         dask_kwargs = {}
-    
+
     if not isinstance(shapes, gpd.GeoSeries):
         shapes = gpd.GeoSeries(shapes).rename_axis("dim_0")
 
