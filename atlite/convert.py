@@ -120,8 +120,9 @@ def convert_and_aggregate(
     xr.DataArray | tuple[xr.DataArray, xr.DataArray]
         If `return_capacity` is False: Single DataArray with time-series of the
         selected resource (per grid cell, aggregated per bus, or time-averaged).
-        If `return_capacity` is True: Tuple of (resource_data, capacity_data).
-
+        If `return_capacity` is True: Tuple of (resource_data, capacity_data)
+        where `resource_data` is the time-series and `capacity_data` is the
+        installed capacity at each bus.
     """
     # Handle mutable default arguments.
     if dask_kwargs is None:
