@@ -82,8 +82,8 @@ def convert_and_aggregate(
     convert_func : Callable[..., xr.DataArray]
         Function that converts weather data to energy data.
     matrix : xr.DataArray | csr_matrix | None, optional
-        Aggregation matrix (N x S) where N is the number of buses and S is 
-        the number of spatial coordinates in the order of `cutout.grid`. 
+        Aggregation matrix (N x S) where N is the number of buses and S is
+        the number of spatial coordinates in the order of `cutout.grid`.
         Used to aggregate grid cells to buses.
     index : pd.Index | None, optional
         Index of buses for the aggregated output.
@@ -352,7 +352,7 @@ def maybe_progressbar(
 def convert_temperature(ds: xr.Dataset) -> xr.DataArray:
     """
     Convert temperature data from Kelvin to degree Celsius.
-    
+
     Supports multiple temperature variable names including 'temperature',
     'soil temperature', and 'dewpoint temperature'. For soil temperature,
     NaN values over sea areas are set to zero.
@@ -367,7 +367,7 @@ def convert_temperature(ds: xr.Dataset) -> xr.DataArray:
     xr.DataArray
         Temperature data converted to degree Celsius with appropriate
         variable name and units attributes.
-        
+
     Raises
     ------
     ValueError
@@ -403,7 +403,7 @@ def temperature(
 ) -> xr.DataArray | tuple[xr.DataArray, xr.DataArray]:
     """
     Generate temperature time-series from weather data.
-    
+
     Converts temperature data from Kelvin to Celsius and optionally
     aggregates spatially and/or temporally based on the provided parameters.
 
@@ -429,7 +429,7 @@ def soil_temperature(
 ) -> xr.DataArray | tuple[xr.DataArray, xr.DataArray]:
     """
     Generate soil temperature time-series from weather data.
-    
+
     Converts soil temperature data from Kelvin to Celsius. NaN values
     over sea areas are automatically set to zero.
 
@@ -455,7 +455,7 @@ def dewpoint_temperature(
 ) -> xr.DataArray | tuple[xr.DataArray, xr.DataArray]:
     """
     Generate dewpoint temperature time-series from weather data.
-    
+
     Converts dewpoint temperature data from Kelvin to Celsius.
 
     Parameters
@@ -1410,7 +1410,7 @@ def convert_csp(ds: xr.Dataset, installation: dict) -> xr.DataArray:
     """
     Convert solar radiation data to concentrated solar power (CSP) generation.
 
-    This function converts direct solar radiation data into CSP generation 
+    This function converts direct solar radiation data into CSP generation
     considering the efficiency characteristics of the specific installation
     and solar position.
 
@@ -1433,7 +1433,7 @@ def convert_csp(ds: xr.Dataset, installation: dict) -> xr.DataArray:
     The function handles different CSP technologies:
     - 'parabolic trough': Uses direct horizontal irradiance (DHI)
     - 'solar tower': Uses direct normal irradiance (DNI)
-    
+
     Output is normalized by reference irradiance and clipped to a maximum
     of 1.0 per unit capacity.
     """
@@ -1784,7 +1784,7 @@ def convert_line_rating(
     -----
     The calculation is based on IEEE Std 738™-2012 with the following
     simplifications and assumptions:
-    
+
     1. Wind speeds are taken at 100 meters height, though transmission
        lines are typically at 50-60 meters height.
     2. Solar heat influx is proportional to shortwave radiation flux.
