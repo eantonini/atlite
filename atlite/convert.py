@@ -123,12 +123,12 @@ def convert_and_aggregate(
         If `return_capacity` is True: Tuple of (resource_data, capacity_data).
 
     """
-    # Handle mutable default arguments
+    # Handle mutable default arguments.
     if dask_kwargs is None:
         dask_kwargs = {}
 
     # Check whether any of matrix, shapes or layout is given. If not, no
-    # aggregateion is to be done.
+    # aggregation is to be done.
     aggregate = any(v is not None for v in [layout, shapes, matrix])
 
     # Define the cases for which aggregation is possible.
@@ -297,7 +297,7 @@ def get_matrix_and_index(
         if isinstance(shapes, geoseries_like) and index is None:
             index = shapes.index
 
-        # Construct indicatormatrix from shapes.
+        # Construct indicator matrix from shapes.
         matrix = cutout.indicatormatrix(shapes, shapes_crs)
 
     if layout is not None:
@@ -388,7 +388,7 @@ def convert_temperature(ds: xr.Dataset) -> xr.DataArray:
     # Convert temperature from Kelvin to degree Celsius.
     ds = ds[variable_name] - 273.15
 
-    # For soil temperature, there are nans where there is sea; set them to zero.
+    # For soil temperature, there are NaNs where there is sea; set them to zero.
     ds = ds.fillna(0.0)
 
     # Set name and units attribute.
@@ -906,7 +906,7 @@ def convert_solar_thermal(
     # Convert temperature to degree Celsius.
     temperature = convert_temperature(ds)
 
-    # Downward shortwave radiation flux is in W/m^2
+    # Downward shortwave radiation flux is in W/m^2.
     # http://rda.ucar.edu/datasets/ds094.0/#metadata/detailed.html?_do=y
     solar_position = SolarPosition(ds)
     surface_orientation = SurfaceOrientation(ds, solar_position, orientation)
@@ -1448,21 +1448,21 @@ def convert_csp(ds: xr.Dataset, installation: dict) -> xr.DataArray:
         case _:
             raise ValueError(f'Unknown CSP technology option "{tech}".')
 
-    # Determine solar_position dependend efficiency for each grid cell and time step
+    # Determine solar_position dependent efficiency for each grid cell and time step.
     efficiency = installation["efficiency"].interp(
         altitude=solar_position["altitude"], azimuth=solar_position["azimuth"]
     )
 
-    # Thermal system output
+    # Thermal system output.
     da = efficiency * irradiation
 
-    # output relative to reference irradiance
+    # Output relative to reference irradiance.
     da /= installation["r_irradiance"]
 
-    # Limit output to max of reference irradiance
+    # Limit output to max of reference irradiance.
     da = da.clip(max=1.0)
 
-    # Fill NaNs originating from DNI or solar positions outside efficiency bounds
+    # Fill NaNs originating from DNI or solar positions outside efficiency bounds.
     da = da.fillna(0.0)
 
     # Set name and units attribute.
@@ -1523,7 +1523,7 @@ def csp(
     if isinstance(installation, (str | Path)):
         installation = get_cspinstallationconfig(installation)
 
-    # Overwrite technology
+    # Overwrite technology if specified.
     if technology is not None:
         installation["technology"] = technology
 
@@ -1715,8 +1715,8 @@ def hydro(
     basins = hydrom.determine_basins(plants, hydrobasins, show_progress=show_progress)
 
     matrix = cutout.indicatormatrix(basins.shapes)
-    # compute the average surface runoff in each basin
-    # Fix NaN and Inf values to 0.0 to avoid numerical issues
+    # Compute the average surface runoff in each basin.
+    # Fix NaN and Inf values to 0.0 to avoid numerical issues.
     matrix_normalized = np.nan_to_num(
         matrix / matrix.sum(axis=1), nan=0.0, posinf=0.0, neginf=0.0
     )
@@ -1729,7 +1729,7 @@ def hydro(
     )
     # The hydrological parameters are in units of "m of water per day" and so
     # they should be multiplied by 1000 and the basin area to convert to m3
-    # d-1 = m3 h-1 / 24
+    # d-1 = m3 h-1 / 24.
     runoff *= xr.DataArray(basins.shapes.to_crs(dict(proj="cea")).area)
 
     return hydrom.shift_and_aggregate_runoff_for_plants(
@@ -1801,45 +1801,45 @@ def convert_line_rating(
     Tfilm = (Ta + Ts) / 2
     T0 = 273.15
 
-    # 1. Convective Loss, at first forced convection
-    V = ds["wnd100m"]  # typically ironmen are about 40-60 meters high
+    # 1. Convective loss, at first forced convection.
+    V = ds["wnd100m"]  # Typically ironmen are about 40-60 meters high.
     mu = (1.458e-6 * Tfilm**1.5) / (
         Tfilm + 383.4 - T0
-    )  # Dynamic viscosity of air (13a)
+    )  # Dynamic viscosity of air (13a).
     H = ds["height"]
     rho = (1.293 - 1.525e-4 * H + 6.379e-9 * H**2) / (
         1 + 0.00367 * (Tfilm - T0)
-    )  # (14a)
+    )  # (14a).
 
     reynold = D * V * rho / mu
 
     k = (
         2.424e-2 + 7.477e-5 * (Tfilm - T0) - 4.407e-9 * (Tfilm - T0) ** 2
-    )  # thermal conductivity
+    )  # Thermal conductivity.
     anglediff = ds["wnd_azimuth"] - radians(psi)
     Phi = absolute(mod(anglediff + pi / 2, pi) - pi / 2)
     K = (
         1.194 - cos(Phi) + 0.194 * cos(2 * Phi) + 0.368 * sin(2 * Phi)
-    )  # wind direction factor
+    )  # Wind direction factor.
 
     Tdiff = Ts - Ta
-    qcf1 = K * (1.01 + 1.347 * reynold**0.52) * k * Tdiff  # (3a) in [1]
-    qcf2 = K * 0.754 * reynold**0.6 * k * Tdiff  # (3b) in [1]
+    qcf1 = K * (1.01 + 1.347 * reynold**0.52) * k * Tdiff  # (3a) in [1].
+    qcf2 = K * 0.754 * reynold**0.6 * k * Tdiff  # (3b) in [1].
 
     qcf = maximum(qcf1, qcf2)
 
-    #  natural convection
+    # Natural convection.
     qcn = 3.645 * sqrt(rho) * D**0.75 * Tdiff**1.25
 
-    # convection loss is the max between forced and natural
+    # Convection loss is the max between forced and natural.
     qc = maximum(qcf, qcn)
 
-    # 2. Radiated Loss
+    # 2. Radiated loss.
     qr = 17.8 * D * epsilon * ((Ts / 100) ** 4 - (Ta / 100) ** 4)
 
-    # 3. Solar Radiance Heat Gain
-    Q = ds["influx_direct"]  # assumption, this is short wave and not heat influx
-    A = D * 1  # projected area of conductor in square meters
+    # 3. Solar radiance heat gain.
+    Q = ds["influx_direct"]  # Assumption: this is short wave and not heat influx.
+    A = D * 1  # Projected area of conductor in square meters.
 
     if isinstance(ds, dict):
         Position = namedtuple("solarposition", ["altitude", "azimuth"])
@@ -1928,7 +1928,7 @@ def line_rating(
 
     >>> i = cutout.line_rating(shapes, n.lines.r/n.lines.length)
     >>> v = xr.DataArray(n.lines.v_nom, dims='name')
-    >>> s = np.sqrt(3) * i * v / 1e3 # in MW
+    >>> s = np.sqrt(3) * i * v / 1e3  # In MW
 
     References
     ----------
@@ -1937,7 +1937,7 @@ def line_rating(
         Relationship of Bare Overhead Conductors, p. 72.
 
     """
-    # Handle mutable default arguments
+    # Handle mutable default arguments.
     if dask_kwargs is None:
         dask_kwargs = {}
 
@@ -1965,7 +1965,7 @@ def line_rating(
 
     df = pd.DataFrame({"psi": azimuth, "R": line_resistance}).assign(**params)
 
-    assert df.notnull().all().all(), "Nan values encountered."
+    assert df.notnull().all().all(), "NaN values encountered."
     assert df.columns.equals(pd.Index(["psi", "R", "D", "Ts", "epsilon", "alpha"]))
 
     dummy = xr.DataArray(np.full(len(data.time), np.nan), coords=(data.time,))
