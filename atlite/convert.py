@@ -173,6 +173,8 @@ def convert_and_aggregate(
         raise ValueError(
             "Passing matrix and shapes is ambiguous. Pass only one of them."
         )
+    if mean_over_time and sum_over_time:
+        raise ValueError("Only one of mean_over_time and sum_over_time can be True.")
 
     # Get the name of the conversion function.
     func_name = convert_func.__name__.replace("convert_", "")
@@ -199,10 +201,10 @@ def convert_and_aggregate(
 
         if capacity_factor or return_capacity:
             # Calculate installed capacity at each bus.
-            caps = matrix.sum(-1)
+            capacity = matrix.sum(-1)
 
             # Create a DataArray for installed capacity.
-            capacity = xr.DataArray(np.asarray(caps).flatten(), [index])
+            capacity = xr.DataArray(np.asarray(capacity).flatten(), [index])
             capacity.attrs["units"] = capacity_units
 
             if capacity_factor:
@@ -211,21 +213,14 @@ def convert_and_aggregate(
                 results.attrs["units"] = "per unit of installed capacity"
             else:
                 results.attrs["units"] = capacity_units
-
-            # Apply time averaging or summation if requested.
-            if mean_over_time:
-                results = results.mean(dim="time")
-            elif sum_over_time:
-                results = results.sum(dim="time")
-
     else:
-        # Apply time averaging or summation if requested.
-        if mean_over_time:
-            results = da.mean(dim="time")
-        elif sum_over_time:
-            results = da.sum(dim="time")
-        else:
-            results = da
+        results = da
+
+    # Apply time averaging or summation if requested.
+    if mean_over_time:
+        results = da.mean(dim="time")
+    elif sum_over_time:
+        results = da.sum(dim="time")
 
     if return_capacity:
         return maybe_progressbar(results, show_progress, **dask_kwargs), capacity
