@@ -20,9 +20,20 @@ Upcoming Release
 **Breaking**
 * Set `add_cutout_windspeed = True` as default for `get_windturbineconfig` to ensure that the cutout wind speed is always added to the turbine configuration (`GH #316 <https://github.com/PyPSA/atlite/pull/316>`_);
   removed the `DeprecationWarning`.
+* Refreshing of `convert.py` adds/changes/removes the following arguments:
+  - newly introduced arguments are:
+    - `mean_over_time`` in place of `capacity_factor`
+    - `sum_over_time``
+    - `capacity_units`
+  - arguments that change meaning are:
+    - `capacity_factor` in place of `per_unit`
+  - removed arguments are:
+    - `capacity_factor_timeseries`
+    - `per_unit`
  
 **Features**
 * Add new onshore turbine models: eno 126 3.5 MW, eno 126 4 MW, and eno 126 4.8 MW . (turbines that match more closely the PyPSA/technologydata cost assumptions)
+* Refreshed `convert.py`` with clearer arguments and logic (`#473 <https://github.com/PyPSA/atlite/pull/473>`_).
 
 **Bug fixes**
 * Fix `atlite.Cutout()` to be able to handle the `bounds` argument to be a `DataFrame` in accordance to the docstring (https://github.com/PyPSA/atlite/pull/445).
